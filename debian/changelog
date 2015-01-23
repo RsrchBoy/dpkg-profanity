@@ -1,3 +1,9 @@
+profanity (0.4.5-1~14.10~ppa1) utopic; urgency=medium
+
+  * Build for utopic.
+
+ -- Chris Weyl <cweyl@alumni.drew.edu>  Thu, 22 Jan 2015 23:45:13 -0800
+
 profanity (0.4.5-1) unstable; urgency=medium
 
   * Imported Upstream version 0.4.5
