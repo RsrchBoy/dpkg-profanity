@@ -1,3 +1,9 @@
+profanity (0.4.7-1~16.04~ppa1) xenial; urgency=medium
+
+  * Build for xenial.
+
+ -- Chris Weyl <cweyl@alumni.drew.edu>  Thu, 20 Oct 2016 22:07:11 -0500
+
 profanity (0.4.7-1) unstable; urgency=medium
 
   * Imported Upstream version 0.4.7
