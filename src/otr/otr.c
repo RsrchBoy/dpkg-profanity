@@ -1,7 +1,7 @@
 /*
  * otr.c
  *
- * Copyright (C) 2012 - 2014 James Booth <boothj5@gmail.com>
+ * Copyright (C) 2012 - 2015 James Booth <boothj5@gmail.com>
  *
  * This file is part of Profanity.
  *
@@ -45,6 +45,7 @@
 #include "contact.h"
 #include "ui/ui.h"
 #include "config/preferences.h"
+#include "chat_session.h"
 
 #define PRESENCE_ONLINE 1
 #define PRESENCE_OFFLINE 0
@@ -109,7 +110,8 @@ static void
 cb_inject_message(void *opdata, const char *accountname,
     const char *protocol, const char *recipient, const char *message)
 {
-    message_send(message, recipient);
+    char *id = message_send_chat_otr(recipient, message);
+    free(id);
 }
 
 static void
@@ -144,23 +146,25 @@ cb_gone_secure(void *opdata, ConnContext *context)
     ui_gone_secure(context->username, otr_is_trusted(context->username));
 }
 
-static char *
-_otr_libotr_version(void)
+char *
+otr_libotr_version(void)
 {
     return OTRL_VERSION;
 }
 
-static char *
-_otr_start_query(void)
+char *
+otr_start_query(void)
 {
     return otrlib_start_query();
 }
 
-static void
-_otr_init(void)
+void
+otr_init(void)
 {
     log_info("Initialising OTR");
     OTRL_INIT;
+
+    jid = NULL;
 
     ops.policy = cb_policy;
     ops.is_logged_in = cb_is_logged_in;
@@ -175,24 +179,25 @@ _otr_init(void)
     data_loaded = FALSE;
 }
 
-static void
-_otr_shutdown(void)
+void
+otr_shutdown(void)
 {
-    if (jid != NULL) {
+    if (jid) {
         free(jid);
+        jid = NULL;
     }
 }
 
 void
-_otr_poll(void)
+otr_poll(void)
 {
     otrlib_poll();
 }
 
-static void
-_otr_on_connect(ProfAccount *account)
+void
+otr_on_connect(ProfAccount *account)
 {
-    if (jid != NULL) {
+    if (jid) {
         free(jid);
     }
     jid = strdup(account->jid);
@@ -268,15 +273,97 @@ _otr_on_connect(ProfAccount *account)
     return;
 }
 
-static void
-_otr_keygen(ProfAccount *account)
+char*
+otr_on_message_recv(const char * const barejid, const char * const resource, const char * const message, gboolean *decrypted)
+{
+    prof_otrpolicy_t policy = otr_get_policy(barejid);
+    char *whitespace_base = strstr(message, OTRL_MESSAGE_TAG_BASE);
+
+    //check for OTR whitespace (opportunistic or always)
+    if (policy == PROF_OTRPOLICY_OPPORTUNISTIC || policy == PROF_OTRPOLICY_ALWAYS) {
+        if (whitespace_base) {
+            if (strstr(message, OTRL_MESSAGE_TAG_V2) || strstr(message, OTRL_MESSAGE_TAG_V1)) {
+                // Remove whitespace pattern for proper display in UI
+                // Handle both BASE+TAGV1/2(16+8) and BASE+TAGV1+TAGV2(16+8+8)
+                int tag_length = 24;
+                if (strstr(message, OTRL_MESSAGE_TAG_V2) && strstr(message, OTRL_MESSAGE_TAG_V1)) {
+                    tag_length = 32;
+                }
+                memmove(whitespace_base, whitespace_base+tag_length, tag_length);
+                char *otr_query_message = otr_start_query();
+                cons_show("OTR Whitespace pattern detected. Attempting to start OTR session...");
+                char *id = message_send_chat_otr(barejid, otr_query_message);
+                free(id);
+            }
+        }
+    }
+
+    char *newmessage = otr_decrypt_message(barejid, message, decrypted);
+    if (!newmessage) { // internal OTR message
+        return NULL;
+    }
+
+    if (policy == PROF_OTRPOLICY_ALWAYS && *decrypted == FALSE && !whitespace_base) {
+        char *otr_query_message = otr_start_query();
+        cons_show("Attempting to start OTR session...");
+        char *id = message_send_chat_otr(barejid, otr_query_message);
+        free(id);
+    }
+
+    return newmessage;
+}
+
+gboolean
+otr_on_message_send(ProfChatWin *chatwin, const char * const message)
+{
+    char *id = NULL;
+    prof_otrpolicy_t policy = otr_get_policy(chatwin->barejid);
+
+    // Send encrypted message
+    if (otr_is_secure(chatwin->barejid)) {
+        char *encrypted = otr_encrypt_message(chatwin->barejid, message);
+        if (encrypted) {
+            id = message_send_chat_otr(chatwin->barejid, encrypted);
+            chat_log_otr_msg_out(chatwin->barejid, message);
+            ui_outgoing_chat_msg(chatwin, message, id, PROF_MSG_OTR);
+            otr_free_message(encrypted);
+            free(id);
+            return TRUE;
+        } else {
+            ui_win_error_line((ProfWin*)chatwin, "Failed to encrypt and send message.");
+            return TRUE;
+        }
+    }
+
+    // show error if not secure and policy always
+    if (policy == PROF_OTRPOLICY_ALWAYS) {
+        ui_win_error_line((ProfWin*)chatwin, "Failed to send message. OTR policy set to: always");
+        return TRUE;
+    }
+
+    // tag and send for policy opportunistic
+    if (policy == PROF_OTRPOLICY_OPPORTUNISTIC) {
+        char *otr_tagged_msg = otr_tag_message(message);
+        id = message_send_chat_otr(chatwin->barejid, otr_tagged_msg);
+        ui_outgoing_chat_msg(chatwin, message, id, PROF_MSG_PLAIN);
+        chat_log_msg_out(chatwin->barejid, message);
+        free(otr_tagged_msg);
+        free(id);
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
+void
+otr_keygen(ProfAccount *account)
 {
     if (data_loaded) {
         cons_show("OTR key already generated.");
         return;
     }
 
-    if (jid != NULL) {
+    if (jid) {
         free(jid);
     }
     jid = strdup(account->jid);
@@ -358,14 +445,26 @@ _otr_keygen(ProfAccount *account)
     return;
 }
 
-static gboolean
-_otr_key_loaded(void)
+gboolean
+otr_key_loaded(void)
 {
     return data_loaded;
 }
 
-static gboolean
-_otr_is_secure(const char * const recipient)
+char *
+otr_tag_message(const char * const msg)
+{
+    GString *otr_message = g_string_new(msg);
+    g_string_append(otr_message, OTRL_MESSAGE_TAG_BASE);
+    g_string_append(otr_message, OTRL_MESSAGE_TAG_V2);
+    char *result = otr_message->str;
+    g_string_free(otr_message, FALSE);
+
+    return result;
+}
+
+gboolean
+otr_is_secure(const char * const recipient)
 {
     ConnContext *context = otrlib_context_find(user_state, recipient, jid);
 
@@ -380,8 +479,8 @@ _otr_is_secure(const char * const recipient)
     }
 }
 
-static gboolean
-_otr_is_trusted(const char * const recipient)
+gboolean
+otr_is_trusted(const char * const recipient)
 {
     ConnContext *context = otrlib_context_find(user_state, recipient, jid);
 
@@ -406,8 +505,8 @@ _otr_is_trusted(const char * const recipient)
     return FALSE;
 }
 
-static void
-_otr_trust(const char * const recipient)
+void
+otr_trust(const char * const recipient)
 {
     ConnContext *context = otrlib_context_find(user_state, recipient, jid);
 
@@ -420,7 +519,7 @@ _otr_trust(const char * const recipient)
     }
 
     if (context->active_fingerprint) {
-        if (context->active_fingerprint->trust != NULL) {
+        if (context->active_fingerprint->trust) {
             free(context->active_fingerprint->trust);
         }
         context->active_fingerprint->trust = strdup("trusted");
@@ -430,8 +529,8 @@ _otr_trust(const char * const recipient)
     return;
 }
 
-static void
-_otr_untrust(const char * const recipient)
+void
+otr_untrust(const char * const recipient)
 {
     ConnContext *context = otrlib_context_find(user_state, recipient, jid);
 
@@ -444,7 +543,7 @@ _otr_untrust(const char * const recipient)
     }
 
     if (context->active_fingerprint) {
-        if (context->active_fingerprint->trust != NULL) {
+        if (context->active_fingerprint->trust) {
             free(context->active_fingerprint->trust);
         }
         context->active_fingerprint->trust = NULL;
@@ -454,8 +553,8 @@ _otr_untrust(const char * const recipient)
     return;
 }
 
-static void
-_otr_smp_secret(const char * const recipient, const char *secret)
+void
+otr_smp_secret(const char * const recipient, const char *secret)
 {
     ConnContext *context = otrlib_context_find(user_state, recipient, jid);
 
@@ -478,8 +577,8 @@ _otr_smp_secret(const char * const recipient, const char *secret)
     }
 }
 
-static void
-_otr_smp_question(const char * const recipient, const char *question, const char *answer)
+void
+otr_smp_question(const char * const recipient, const char *question, const char *answer)
 {
     ConnContext *context = otrlib_context_find(user_state, recipient, jid);
 
@@ -495,8 +594,8 @@ _otr_smp_question(const char * const recipient, const char *question, const char
     ui_otr_authetication_waiting(recipient);
 }
 
-static void
-_otr_smp_answer(const char * const recipient, const char *answer)
+void
+otr_smp_answer(const char * const recipient, const char *answer)
 {
     ConnContext *context = otrlib_context_find(user_state, recipient, jid);
 
@@ -512,14 +611,14 @@ _otr_smp_answer(const char * const recipient, const char *answer)
     otrl_message_respond_smp(user_state, &ops, NULL, context, (const unsigned char*)answer, strlen(answer));
 }
 
-static void
-_otr_end_session(const char * const recipient)
+void
+otr_end_session(const char * const recipient)
 {
     otrlib_end_session(user_state, recipient, jid, &ops);
 }
 
-static char *
-_otr_get_my_fingerprint(void)
+char *
+otr_get_my_fingerprint(void)
 {
     char fingerprint[45];
     otrl_privkey_fingerprint(user_state, fingerprint, jid, "xmpp");
@@ -528,12 +627,12 @@ _otr_get_my_fingerprint(void)
     return result;
 }
 
-static char *
-_otr_get_their_fingerprint(const char * const recipient)
+char *
+otr_get_their_fingerprint(const char * const recipient)
 {
     ConnContext *context = otrlib_context_find(user_state, recipient, jid);
 
-    if (context != NULL) {
+    if (context) {
         Fingerprint *fingerprint = context->active_fingerprint;
         char readable[45];
         otrl_privkey_hash_to_human(readable, fingerprint->fingerprint);
@@ -543,10 +642,11 @@ _otr_get_their_fingerprint(const char * const recipient)
     }
 }
 
-static prof_otrpolicy_t
-_otr_get_policy(const char * const recipient)
+prof_otrpolicy_t
+otr_get_policy(const char * const recipient)
 {
-    ProfAccount *account = accounts_get_account(jabber_get_account_name());
+    char *account_name = jabber_get_account_name();
+    ProfAccount *account = accounts_get_account(account_name);
     // check contact specific setting
     if (g_list_find_custom(account->otr_manual, recipient, (GCompareFunc)g_strcmp0)) {
         account_free(account);
@@ -562,7 +662,7 @@ _otr_get_policy(const char * const recipient)
     }
 
     // check default account setting
-    if (account->otr_policy != NULL) {
+    if (account->otr_policy) {
         prof_otrpolicy_t result;
         if (g_strcmp0(account->otr_policy, "manual") == 0) {
             result = PROF_OTRPOLICY_MANUAL;
@@ -595,8 +695,8 @@ _otr_get_policy(const char * const recipient)
     return result;
 }
 
-static char *
-_otr_encrypt_message(const char * const to, const char * const message)
+char *
+otr_encrypt_message(const char * const to, const char * const message)
 {
     char *newmessage = NULL;
     gcry_error_t err = otrlib_encrypt_message(user_state, &ops, jid, to, message, &newmessage);
@@ -608,13 +708,21 @@ _otr_encrypt_message(const char * const to, const char * const message)
     }
 }
 
-static char *
-_otr_decrypt_message(const char * const from, const char * const message, gboolean *was_decrypted)
+static void
+_otr_tlv_free(OtrlTLV *tlvs)
 {
-    char *decrypted = NULL;
+    if (tlvs) {
+        otrl_tlv_free(tlvs);
+    }
+}
+
+char *
+otr_decrypt_message(const char * const from, const char * const message, gboolean *decrypted)
+{
+    char *newmessage = NULL;
     OtrlTLV *tlvs = NULL;
 
-    int result = otrlib_decrypt_message(user_state, &ops, jid, from, message, &decrypted, &tlvs);
+    int result = otrlib_decrypt_message(user_state, &ops, jid, from, message, &newmessage, &tlvs);
 
     // internal libotr message
     if (result == 1) {
@@ -623,8 +731,7 @@ _otr_decrypt_message(const char * const from, const char * const message, gboole
         // common tlv handling
         OtrlTLV *tlv = otrl_tlv_find(tlvs, OTRL_TLV_DISCONNECTED);
         if (tlv) {
-
-            if (context != NULL) {
+            if (context) {
                 otrl_context_force_plaintext(context);
                 ui_gone_insecure(from);
             }
@@ -632,50 +739,28 @@ _otr_decrypt_message(const char * const from, const char * const message, gboole
 
         // library version specific tlv handling
         otrlib_handle_tlvs(user_state, &ops, context, tlvs, smp_initiators);
+        _otr_tlv_free(tlvs);
 
         return NULL;
 
-    // message was decrypted, return to user
-    } else if (decrypted != NULL) {
-        *was_decrypted = TRUE;
-        return decrypted;
+    // message was processed, return to user
+    } else if (newmessage) {
+        _otr_tlv_free(tlvs);
+        if (g_str_has_prefix(message, "?OTR:")) {
+            *decrypted = TRUE;
+        }
+        return newmessage;
 
     // normal non OTR message
     } else {
-        *was_decrypted = FALSE;
+        _otr_tlv_free(tlvs);
+        *decrypted = FALSE;
         return strdup(message);
     }
 }
 
-static void
-_otr_free_message(char *message)
+void
+otr_free_message(char *message)
 {
     otrl_message_free(message);
-}
-
-void
-otr_init_module(void)
-{
-    otr_init = _otr_init;
-    otr_shutdown = _otr_shutdown;
-    otr_libotr_version = _otr_libotr_version;
-    otr_start_query = _otr_start_query;
-    otr_poll = _otr_poll;
-    otr_on_connect = _otr_on_connect;
-    otr_keygen = _otr_keygen;
-    otr_key_loaded = _otr_key_loaded;
-    otr_is_secure = _otr_is_secure;
-    otr_is_trusted = _otr_is_trusted;
-    otr_trust = _otr_trust;
-    otr_untrust = _otr_untrust;
-    otr_end_session = _otr_end_session;
-    otr_get_my_fingerprint = _otr_get_my_fingerprint;
-    otr_get_their_fingerprint = _otr_get_their_fingerprint;
-    otr_encrypt_message = _otr_encrypt_message;
-    otr_decrypt_message = _otr_decrypt_message;
-    otr_free_message = _otr_free_message;
-    otr_smp_secret = _otr_smp_secret;
-    otr_smp_question = _otr_smp_question;
-    otr_smp_answer = _otr_smp_answer;
-    otr_get_policy = _otr_get_policy;
 }

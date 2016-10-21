@@ -1,7 +1,7 @@
 /*
  * notifier.c
  *
- * Copyright (C) 2012 - 2014 James Booth <boothj5@gmail.com>
+ * Copyright (C) 2012 - 2015 James Booth <boothj5@gmail.com>
  *
  * This file is part of Profanity.
  *
@@ -48,22 +48,32 @@
 #include "log.h"
 #include "muc.h"
 #include "ui/ui.h"
+#include "window_list.h"
+#include "config/preferences.h"
 
-static void _notify(const char * const message, int timeout,
-    const char * const category);
+static void _notify(const char * const message, int timeout, const char * const category);
 
-static void
-_notifier_uninit(void)
+static GTimer *remind_timer;
+
+void
+notifier_initialise(void)
+{
+    remind_timer = g_timer_new();
+}
+
+void
+notifier_uninit(void)
 {
 #ifdef HAVE_LIBNOTIFY
     if (notify_is_initted()) {
         notify_uninit();
     }
 #endif
+    g_timer_destroy(remind_timer);
 }
 
-static void
-_notify_typing(const char * const handle)
+void
+notify_typing(const char * const handle)
 {
     char message[strlen(handle) + 1 + 11];
     sprintf(message, "%s: typing...", handle);
@@ -71,15 +81,15 @@ _notify_typing(const char * const handle)
     _notify(message, 10000, "Incoming message");
 }
 
-static void
-_notify_invite(const char * const from, const char * const room,
+void
+notify_invite(const char * const from, const char * const room,
     const char * const reason)
 {
     GString *message = g_string_new("Room invite\nfrom: ");
     g_string_append(message, from);
     g_string_append(message, "\nto: ");
     g_string_append(message, room);
-    if (reason != NULL) {
+    if (reason) {
         g_string_append_printf(message, "\n\"%s\"", reason);
     }
 
@@ -88,26 +98,34 @@ _notify_invite(const char * const from, const char * const room,
     g_string_free(message, TRUE);
 }
 
-static void
-_notify_message(const char * const handle, int win, const char * const text)
+void
+notify_message(ProfWin *window, const char * const name, const char * const text)
 {
-    GString *message = g_string_new("");
-    g_string_append_printf(message, "%s (win %d)", handle, win);
-    if (text != NULL) {
-        g_string_append_printf(message, "\n%s", text);
+    int num = wins_get_num(window);
+    if (num == 10) {
+        num = 0;
     }
 
-    _notify(message->str, 10000, "incoming message");
+    gboolean is_current = wins_is_current(window);
+    if (!is_current || (is_current && prefs_get_boolean(PREF_NOTIFY_MESSAGE_CURRENT)) ) {
+        GString *message = g_string_new("");
+        g_string_append_printf(message, "%s (win %d)", name, num);
 
-    g_string_free(message, TRUE);
+        if (prefs_get_boolean(PREF_NOTIFY_MESSAGE_TEXT) && text) {
+            g_string_append_printf(message, "\n%s", text);
+        }
+
+        _notify(message->str, 10000, "incoming message");
+        g_string_free(message, TRUE);
+    }
 }
 
-static void
-_notify_room_message(const char * const handle, const char * const room, int win, const char * const text)
+void
+notify_room_message(const char * const handle, const char * const room, int win, const char * const text)
 {
     GString *message = g_string_new("");
     g_string_append_printf(message, "%s in %s (win %d)", handle, room, win);
-    if (text != NULL) {
+    if (text) {
         g_string_append_printf(message, "\n%s", text);
     }
 
@@ -116,8 +134,8 @@ _notify_room_message(const char * const handle, const char * const room, int win
     g_string_free(message, TRUE);
 }
 
-static void
-_notify_subscription(const char * const from)
+void
+notify_subscription(const char * const from)
 {
     GString *message = g_string_new("Subscription request: \n");
     g_string_append(message, from);
@@ -125,49 +143,55 @@ _notify_subscription(const char * const from)
     g_string_free(message, TRUE);
 }
 
-static void
-_notify_remind(void)
+void
+notify_remind(void)
 {
-    gint unread = ui_unread();
-    gint open = muc_invites_count();
-    gint subs = presence_sub_request_count();
+    gdouble elapsed = g_timer_elapsed(remind_timer, NULL);
+    gint remind_period = prefs_get_notify_remind();
+    if (remind_period > 0 && elapsed >= remind_period) {
+        gint unread = ui_unread();
+        gint open = muc_invites_count();
+        gint subs = presence_sub_request_count();
 
-    GString *text = g_string_new("");
+        GString *text = g_string_new("");
 
-    if (unread > 0) {
-        if (unread == 1) {
-            g_string_append(text, "1 unread message");
-        } else {
-            g_string_append_printf(text, "%d unread messages", unread);
-        }
-
-    }
-    if (open > 0) {
         if (unread > 0) {
-            g_string_append(text, "\n");
-        }
-        if (open == 1) {
-            g_string_append(text, "1 room invite");
-        } else {
-            g_string_append_printf(text, "%d room invites", open);
-        }
-    }
-    if (subs > 0) {
-        if ((unread > 0) || (open > 0)) {
-            g_string_append(text, "\n");
-        }
-        if (subs == 1) {
-            g_string_append(text, "1 subscription request");
-        } else {
-            g_string_append_printf(text, "%d subscription requests", subs);
-        }
-    }
+            if (unread == 1) {
+                g_string_append(text, "1 unread message");
+            } else {
+                g_string_append_printf(text, "%d unread messages", unread);
+            }
 
-    if ((unread > 0) || (open > 0) || (subs > 0)) {
-        _notify(text->str, 5000, "Incoming message");
-    }
+        }
+        if (open > 0) {
+            if (unread > 0) {
+                g_string_append(text, "\n");
+            }
+            if (open == 1) {
+                g_string_append(text, "1 room invite");
+            } else {
+                g_string_append_printf(text, "%d room invites", open);
+            }
+        }
+        if (subs > 0) {
+            if ((unread > 0) || (open > 0)) {
+                g_string_append(text, "\n");
+            }
+            if (subs == 1) {
+                g_string_append(text, "1 subscription request");
+            } else {
+                g_string_append_printf(text, "%d subscription requests", subs);
+            }
+        }
 
-    g_string_free(text, TRUE);
+        if ((unread > 0) || (open > 0) || (subs > 0)) {
+            _notify(text->str, 5000, "Incoming message");
+        }
+
+        g_string_free(text, TRUE);
+
+        g_timer_start(remind_timer);
+    }
 }
 
 static void
@@ -227,10 +251,9 @@ _notify(const char * const message, int timeout,
     Shell_NotifyIcon(NIM_MODIFY, &nid);
 #endif
 #ifdef HAVE_OSXNOTIFY
-    GString *notify_command = g_string_new("terminal-notifier -title \"Profanity\" -message \"");
+    GString *notify_command = g_string_new("terminal-notifier -title \"Profanity\" -message '");
 
-    char *escaped_double = str_replace(message, "\"", "\\\"");
-    char *escaped_single = str_replace(escaped_double, "`", "\\`");
+    char *escaped_single = str_replace(message, "'", "'\\''");
 
     if (escaped_single[0] == '<') {
         g_string_append(notify_command, "\\<");
@@ -248,8 +271,7 @@ _notify(const char * const message, int timeout,
         g_string_append(notify_command, escaped_single);
     }
 
-    g_string_append(notify_command, "\"");
-    free(escaped_double);
+    g_string_append(notify_command, "'");
     free(escaped_single);
 
     char *term_name = getenv("TERM_PROGRAM");
@@ -260,7 +282,7 @@ _notify(const char * const message, int timeout,
         app_id = "com.googlecode.iterm2";
     }
 
-    if (app_id != NULL) {
+    if (app_id) {
         g_string_append(notify_command, " -sender ");
         g_string_append(notify_command, app_id);
     }
@@ -273,16 +295,3 @@ _notify(const char * const message, int timeout,
     g_string_free(notify_command, TRUE);
 #endif
 }
-
-void
-notifier_init_module(void)
-{
-    notifier_uninit = _notifier_uninit;
-    notify_typing = _notify_typing;
-    notify_invite = _notify_invite;
-    notify_message = _notify_message;
-    notify_room_message =  _notify_room_message;
-    notify_subscription = _notify_subscription;
-    notify_remind = _notify_remind;
-}
-

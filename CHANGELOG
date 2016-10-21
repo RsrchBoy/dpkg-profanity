@@ -1,0 +1,34 @@
+0.4.7
+=====
+
+- GNU Readline
+- OpenPGP support
+- Message Carbons (xep-0280)
+- Message Delivery Receipts (xep-0184)
+- MUC Mediated Invitation support
+- Configurable time formatting
+- Option to show JIDs in roster
+- Option to hide empty groups in roster
+- Generate UUID for unnamed new MUC rooms
+- Themable UI preference to indicate OTR and PGP messages
+- Reformatted help
+- devel: Added functional tests using libexpect and libstabber
+
+0.4.6
+=====
+
+- 16 colour support (/theme colours)
+- UI preferences included in themes
+- /wrap - Word wrapping
+- /time - Show/hide time in main window, and configure precision
+- /roster - Show/hide and customise roster panel
+- /roster and /occupants panel size settings (% of screen width)
+- /account default - Set default account for /connect
+- /account remove
+- /presence - Show/hide contact presence in titlebar 
+- /resource - Override resource during chat, resource display settings
+- Improved chat session handling <http://xmpp.org/rfcs/rfc6121.html#message-chat>
+- Lower CPU usage with dynamic input blocking timeout
+- Keychain/keyring integration using account eval_password property
+- Disable term window title by default
+- Fixed remote code execution bug on OSX when desktop notifications configured to show message text

@@ -1,7 +1,7 @@
 /*
  * chat_session.h
  *
- * Copyright (C) 2012 - 2014 James Booth <boothj5@gmail.com>
+ * Copyright (C) 2012 - 2015 James Booth <boothj5@gmail.com>
  *
  * This file is part of Profanity.
  *
@@ -37,24 +37,27 @@
 
 #include <glib.h>
 
+typedef struct chat_session_t {
+    char *barejid;
+    char *resource;
+    gboolean resource_override;
+    gboolean send_states;
+
+} ChatSession;
+
 void chat_sessions_init(void);
 void chat_sessions_clear(void);
-void chat_session_start(const char * const recipient,
-    gboolean recipient_supports);
-gboolean chat_session_exists(const char * const recipient);
-void chat_session_end(const char * const recipient);
-gboolean chat_session_get_recipient_supports(const char * const recipient);
-void chat_session_set_recipient_supports(const char * const recipient,
-    gboolean recipient_supports);
 
-void chat_session_set_composing(const char * const recipient);
-void chat_session_no_activity(const char * const recipient);
-gboolean chat_session_is_inactive(const char * const recipient);
-void chat_session_set_active(const char * const recipient);
-gboolean chat_session_is_paused(const char * const recipient);
-gboolean chat_session_is_gone(const char * const recipient);
-void chat_session_set_gone(const char * const recipient);
-void chat_session_set_sent(const char * const recipient);
-gboolean chat_session_get_sent(const char * const recipient);
+void chat_session_resource_override(const char * const barejid, const char * const resource);
+ChatSession* chat_session_get(const char * const barejid);
+
+void chat_session_recipient_active(const char * const barejid, const char * const resource,
+    gboolean send_states);
+void chat_session_recipient_typing(const char * const barejid, const char * const resource);
+void chat_session_recipient_paused(const char * const barejid, const char * const resource);
+void chat_session_recipient_gone(const char * const barejid, const char * const resource);
+void chat_session_recipient_inactive(const char * const barejid, const char * const resource);
+
+void chat_session_remove(const char * const barejid);
 
 #endif

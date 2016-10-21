@@ -1,7 +1,7 @@
 /*
  * contact.h
  *
- * Copyright (C) 2012 - 2014 James Booth <boothj5@gmail.com>
+ * Copyright (C) 2012 - 2015 James Booth <boothj5@gmail.com>
  *
  * This file is part of Profanity.
  *
@@ -36,6 +36,7 @@
 #define CONTACT_H
 
 #include "resource.h"
+#include "tools/autocomplete.h"
 
 typedef struct p_contact_t *PContact;
 
@@ -46,7 +47,9 @@ void p_contact_add_resource(PContact contact, Resource *resource);
 gboolean p_contact_remove_resource(PContact contact, const char * const resource);
 void p_contact_free(PContact contact);
 const char* p_contact_barejid(PContact contact);
+const char* p_contact_barejid_collate_key(PContact contact);
 const char* p_contact_name(PContact contact);
+const char* p_contact_name_collate_key(PContact contact);
 const char* p_contact_name_or_jid(const PContact contact);
 const char* p_contact_presence(PContact contact);
 const char* p_contact_status(PContact contact);
@@ -68,5 +71,7 @@ GSList * p_contact_groups(const PContact contact);
 gboolean p_contact_in_group(const PContact contact, const char * const group);
 gboolean p_contact_subscribed(const PContact contact);
 char * p_contact_create_display_string(const PContact contact, const char * const resource);
+Autocomplete p_contact_resource_ac(const PContact contact);
+void p_contact_resource_ac_reset(const PContact contact);
 
 #endif

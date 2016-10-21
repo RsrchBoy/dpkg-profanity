@@ -1,7 +1,7 @@
 /*
  * window.h
  *
- * Copyright (C) 2012 - 2014 James Booth <boothj5@gmail.com>
+ * Copyright (C) 2012 - 2015 James Booth <boothj5@gmail.com>
  *
  * This file is part of Profanity.
  *
@@ -37,71 +37,46 @@
 
 #include "config.h"
 
+#include <wchar.h>
+
+#include "contact.h"
+#include "muc.h"
+#include "ui/ui.h"
+#include "ui/buffer.h"
+#include "xmpp/xmpp.h"
+#include "chat_state.h"
+
 #ifdef HAVE_NCURSESW_NCURSES_H
 #include <ncursesw/ncurses.h>
 #elif HAVE_NCURSES_H
 #include <ncurses.h>
 #endif
 
-#include "contact.h"
-#include "muc.h"
-#include "ui/buffer.h"
-#include "xmpp/xmpp.h"
-
-#define NO_ME   1
-#define NO_DATE 2
-#define NO_EOL  4
-#define NO_COLOUR_FROM  8
-
 #define PAD_SIZE 1000
 
-typedef enum {
-    WIN_UNUSED,
-    WIN_CONSOLE,
-    WIN_CHAT,
-    WIN_MUC,
-    WIN_MUC_CONFIG,
-    WIN_PRIVATE,
-    WIN_XML
-} win_type_t;
-
-typedef struct prof_win_t {
-    char *from;
-    WINDOW *win;
-    WINDOW *subwin;
-    ProfBuff buffer;
-    win_type_t type;
-    gboolean is_otr;
-    gboolean is_trusted;
-    int y_pos;
-    int sub_y_pos;
-    int paged;
-    int unread;
-    int history_shown;
-    DataForm *form;
-} ProfWin;
-
-ProfWin* win_create(const char * const title, int cols, win_type_t type);
-void win_free(ProfWin *window);
-void win_update_virtual(ProfWin *window);
 void win_move_to_end(ProfWin *window);
-int  win_presence_colour(const char * const presence);
-void win_show_contact(ProfWin *window, PContact contact);
-void win_show_occupant(ProfWin *window, Occupant *occupant);
 void win_show_status_string(ProfWin *window, const char * const from,
     const char * const show, const char * const status,
     GDateTime *last_activity, const char * const pre,
     const char * const default_show);
-void win_print_incoming_message(ProfWin *window, GTimeVal *tv_stamp,
-    const char * const from, const char * const message);
-void win_show_info(ProfWin *window, PContact contact);
-void win_show_occupant_info(ProfWin *window, const char * const room, Occupant *occupant);
-void win_save_vprint(ProfWin *window, const char show_char, GTimeVal *tstamp, int flags, int attrs, const char * const from, const char * const message, ...);
-void win_save_print(ProfWin *window, const char show_char, GTimeVal *tstamp, int flags, int attrs, const char * const from, const char * const message);
-void win_save_println(ProfWin *window, const char * const message);
-void win_save_newline(ProfWin *window);
+void win_print_incoming_message(ProfWin *window, GDateTime *timestamp,
+    const char * const from, const char * const message, prof_enc_t enc_mode);
+void win_print_with_receipt(ProfWin *window, const char show_char, int pad_indent, GTimeVal *tstamp, int flags,
+    theme_item_t theme_item, const char * const from, const char * const message, char *id);
+void win_newline(ProfWin *window);
 void win_redraw(ProfWin *window);
-void win_hide_subwin(ProfWin *window);
-void win_show_subwin(ProfWin *window);
+int win_roster_cols(void);
+int win_occpuants_cols(void);
+void win_printline_nowrap(WINDOW *win, char *msg);
+void win_mark_received(ProfWin *window, const char * const id);
+
+gboolean win_has_active_subwin(ProfWin *window);
+
+void win_clear(ProfWin *window);
+
+void win_page_up(ProfWin *window);
+void win_page_down(ProfWin *window);
+void win_sub_page_down(ProfWin *window);
+void win_sub_page_up(ProfWin *window);
 
 #endif

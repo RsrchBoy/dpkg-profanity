@@ -1,7 +1,7 @@
 /*
  * command.h
  *
- * Copyright (C) 2012 - 2014 James Booth <boothj5@gmail.com>
+ * Copyright (C) 2012 - 2015 James Booth <boothj5@gmail.com>
  *
  * This file is part of Profanity.
  *
@@ -38,14 +38,15 @@
 #include <glib.h>
 
 #include "xmpp/form.h"
+#include "ui/ui.h"
 
 GHashTable *commands;
 
 void cmd_init(void);
 void cmd_uninit(void);
 
-void cmd_autocomplete(char *input, int *size);
-void cmd_reset_autocomplete(void);
+char* cmd_autocomplete(ProfWin *window, const char * const input);
+void cmd_reset_autocomplete(ProfWin *window);
 void cmd_autocomplete_add(char *value);
 void cmd_autocomplete_remove(char *value);
 void cmd_autocomplete_add_form_fields(DataForm *form);
@@ -53,9 +54,11 @@ void cmd_autocomplete_remove_form_fields(DataForm *form);
 void cmd_alias_add(char *value);
 void cmd_alias_remove(char *value);
 
-gboolean cmd_execute(const char * const command, const char * const inp);
-gboolean cmd_execute_alias(const char * const inp, gboolean *ran);
-gboolean cmd_execute_default(const char * const inp);
+gboolean cmd_valid_tag(const char * const str);
+gboolean cmd_has_tag(Command *pcmd, const char * const tag);
+
+gboolean cmd_process_input(ProfWin *window, char *inp);
+void cmd_execute_connect(ProfWin *window, const char * const account);
 
 gboolean cmd_exists(char *cmd);
 
@@ -64,7 +67,9 @@ GSList * cmd_get_settings_help(void);
 GSList * cmd_get_presence_help(void);
 
 void cmd_history_append(char *inp);
-char *cmd_history_previous(char *inp, int *size);
-char *cmd_history_next(char *inp, int *size);
+char *cmd_history_previous(char *inp);
+char *cmd_history_next(char *inp);
+
+void command_docgen(void);
 
 #endif

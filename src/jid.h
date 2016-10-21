@@ -1,7 +1,7 @@
 /*
  * jid.h
  *
- * Copyright (C) 2012 - 2014 James Booth <boothj5@gmail.com>
+ * Copyright (C) 2012 - 2015 James Booth <boothj5@gmail.com>
  *
  * This file is part of Profanity.
  *
@@ -55,5 +55,7 @@ void jid_destroy(Jid *jid);
 gboolean jid_is_valid_room_form(Jid *jid);
 char * create_fulljid(const char * const barejid, const char * const resource);
 char * get_nick_from_full_jid(const char * const full_room_jid);
+
+char * jid_fulljid_or_barejid(Jid *jid);
 
 #endif

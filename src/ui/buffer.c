@@ -1,7 +1,7 @@
 /*
  * buffer.c
  *
- * Copyright (C) 2012 - 2014 James Booth <boothj5@gmail.com>
+ * Copyright (C) 2012 - 2015 James Booth <boothj5@gmail.com>
  *
  * This file is part of Profanity.
  *
@@ -80,16 +80,18 @@ buffer_free(ProfBuff buffer)
 }
 
 void
-buffer_push(ProfBuff buffer, const char show_char, const char * const date_fmt,
-    int flags, int attrs, const char * const from, const char * const message)
+buffer_push(ProfBuff buffer, const char show_char, int pad_indent, GDateTime *time,
+    int flags, theme_item_t theme_item, const char * const from, const char * const message, DeliveryReceipt *receipt)
 {
     ProfBuffEntry *e = malloc(sizeof(struct prof_buff_entry_t));
     e->show_char = show_char;
+    e->pad_indent = pad_indent;
     e->flags = flags;
-    e->attrs = attrs;
-    e->date_fmt = strdup(date_fmt);
+    e->theme_item = theme_item;
+    e->time = g_date_time_ref(time);
     e->from = strdup(from);
     e->message = strdup(message);
+    e->receipt = receipt;
 
     if (g_slist_length(buffer->entries) == BUFF_SIZE) {
         _free_entry(buffer->entries->data);
@@ -97,6 +99,24 @@ buffer_push(ProfBuff buffer, const char show_char, const char * const date_fmt,
     }
 
     buffer->entries = g_slist_append(buffer->entries, e);
+}
+
+gboolean
+buffer_mark_received(ProfBuff buffer, const char * const id)
+{
+    GSList *entries = buffer->entries;
+    while (entries) {
+        ProfBuffEntry *entry = entries->data;
+        if (entry->receipt && g_strcmp0(entry->receipt->id, id) == 0) {
+            if (!entry->receipt->received) {
+                entry->receipt->received = TRUE;
+                return TRUE;
+            }
+        }
+        entries = g_slist_next(entries);
+    }
+
+    return FALSE;
 }
 
 ProfBuffEntry*
@@ -111,7 +131,10 @@ _free_entry(ProfBuffEntry *entry)
 {
     free(entry->message);
     free(entry->from);
-    free(entry->date_fmt);
+    g_date_time_unref(entry->time);
+    if (entry->receipt) {
+        free(entry->receipt->id);
+        free(entry->receipt);
+    }
     free(entry);
 }
-

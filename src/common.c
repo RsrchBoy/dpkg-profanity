@@ -1,7 +1,7 @@
 /*
  * common.c
  *
- * Copyright (C) 2012 - 2014 James Booth <boothj5@gmail.com>
+ * Copyright (C) 2012 - 2015 James Booth <boothj5@gmail.com>
  *
  * This file is part of Profanity.
  *
@@ -50,15 +50,14 @@
 #include "log.h"
 #include "common.h"
 
-// assume malloc stores at most 8 bytes for size of allocated memory
-// and page size is at least 4KB
-#define READ_BUF_SIZE 4088
 
 struct curl_data_t
 {
     char *buffer;
     size_t size;
 };
+
+static unsigned long unique_id = 0;
 
 static size_t _data_callback(void *ptr, size_t size, size_t nmemb, void *data);
 
@@ -193,8 +192,20 @@ str_replace(const char *string, const char *substr,
     return newstr;
 }
 
+gboolean
+str_contains_str(const char *  const searchstr, const char * const substr)
+{
+    if (!searchstr) {
+        return FALSE;
+    }
+    if (!substr) {
+        return FALSE;
+    }
+    return g_strrstr(searchstr, substr) != NULL;
+}
+
 int
-str_contains(char str[], int size, char ch)
+str_contains(const char str[], int size, char ch)
 {
     int i;
     for (i = 0; i < size; i++) {
@@ -203,6 +214,55 @@ str_contains(char str[], int size, char ch)
     }
 
     return 0;
+}
+
+gboolean
+strtoi_range(char *str, int *saveptr, int min, int max, char **err_msg)
+{
+    char *ptr;
+    int val;
+
+    errno = 0;
+    val = (int)strtol(str, &ptr, 0);
+    if (errno != 0 || *str == '\0' || *ptr != '\0') {
+        GString *err_str = g_string_new("");
+        g_string_printf(err_str, "Could not convert \"%s\" to a number.", str);
+        *err_msg = err_str->str;
+        g_string_free(err_str, FALSE);
+        return FALSE;
+    } else if (val < min || val > max) {
+        GString *err_str = g_string_new("");
+        g_string_printf(err_str, "Value %s out of range. Must be in %d..%d.", str, min, max);
+        *err_msg = err_str->str;
+        g_string_free(err_str, FALSE);
+        return FALSE;
+    }
+
+    *saveptr = val;
+
+    return TRUE;
+}
+
+int
+utf8_display_len(const char * const str)
+{
+    if (!str) {
+        return 0;
+    }
+
+    int len = 0;
+    gchar *curr = g_utf8_offset_to_pointer(str, 0);
+    while (*curr != '\0') {
+        gunichar curru = g_utf8_get_char(curr);
+        if (g_unichar_iswide(curru)) {
+            len += 2;
+        } else {
+            len ++;
+        }
+        curr = g_utf8_next_char(curr);
+    }
+
+    return len;
 }
 
 char *
@@ -229,7 +289,7 @@ prof_getline(FILE *stream)
 
         result = (char *)realloc(s, s_size + buf_size);
         if (result == NULL) {
-            if (s != NULL) {
+            if (s) {
                 free(s);
                 s = NULL;
             }
@@ -267,7 +327,7 @@ release_get_latest()
     curl_easy_perform(handle);
     curl_easy_cleanup(handle);
 
-    if (output.buffer != NULL) {
+    if (output.buffer) {
         output.buffer[output.size++] = '\0';
         return output.buffer;
     } else {
@@ -374,10 +434,10 @@ gchar *
 xdg_get_config_home(void)
 {
     gchar *xdg_config_home = getenv("XDG_CONFIG_HOME");
-    if (xdg_config_home != NULL)
+    if (xdg_config_home)
         g_strstrip(xdg_config_home);
 
-    if ((xdg_config_home != NULL) && (strcmp(xdg_config_home, "") != 0)) {
+    if (xdg_config_home && (strcmp(xdg_config_home, "") != 0)) {
         return strdup(xdg_config_home);
     } else {
         GString *default_path = g_string_new(getenv("HOME"));
@@ -393,10 +453,10 @@ gchar *
 xdg_get_data_home(void)
 {
     gchar *xdg_data_home = getenv("XDG_DATA_HOME");
-    if (xdg_data_home != NULL)
+    if (xdg_data_home)
         g_strstrip(xdg_data_home);
 
-    if ((xdg_data_home != NULL) && (strcmp(xdg_data_home, "") != 0)) {
+    if (xdg_data_home && (strcmp(xdg_data_home, "") != 0)) {
         return strdup(xdg_data_home);
     } else {
         GString *default_path = g_string_new(getenv("HOME"));
@@ -411,12 +471,11 @@ xdg_get_data_home(void)
 char *
 create_unique_id(char *prefix)
 {
-    static unsigned long unique_id;
     char *result = NULL;
     GString *result_str = g_string_new("");
 
     unique_id++;
-    if (prefix != NULL) {
+    if (prefix) {
         g_string_printf(result_str, "prof_%s_%lu", prefix, unique_id);
     } else {
         g_string_printf(result_str, "prof_%lu", unique_id);
@@ -425,6 +484,12 @@ create_unique_id(char *prefix)
     g_string_free(result_str, FALSE);
 
     return result;
+}
+
+void
+reset_unique_id(void)
+{
+    unique_id = 0;
 }
 
 char *
@@ -469,25 +534,34 @@ cmp_win_num(gconstpointer a, gconstpointer b)
 int
 get_next_available_win_num(GList *used)
 {
-    used = g_list_sort(used, cmp_win_num);
     // only console used
     if (g_list_length(used) == 1) {
         return 2;
     } else {
+        GList *sorted = NULL;
+        GList *curr = used;
+        while (curr) {
+            sorted = g_list_insert_sorted(sorted, curr->data, cmp_win_num);
+            curr = g_list_next(curr);
+        }
+
         int result = 0;
         int last_num = 1;
-        GList *curr = used;
+        curr = sorted;
         // skip console
         curr = g_list_next(curr);
-        while (curr != NULL) {
+        while (curr) {
             int curr_num = GPOINTER_TO_INT(curr->data);
+
             if (((last_num != 9) && ((last_num + 1) != curr_num)) ||
                     ((last_num == 9) && (curr_num != 0))) {
                 result = last_num + 1;
                 if (result == 10) {
                     result = 0;
                 }
+                g_list_free(sorted);
                 return (result);
+
             } else {
                 last_num = curr_num;
                 if (last_num == 0) {
@@ -501,6 +575,7 @@ get_next_available_win_num(GList *used)
             result = 0;
         }
 
+        g_list_free(sorted);
         return result;
     }
 }
@@ -546,4 +621,26 @@ get_file_or_linked(char *loc, char *basedir)
     }
 
     return true_loc;
+}
+
+char *
+strip_arg_quotes(const char * const input)
+{
+    char *unquoted = strdup(input);
+
+    // Remove starting quote if it exists
+    if(strchr(unquoted, '"')) {
+        if(strchr(unquoted, ' ') + 1 == strchr(unquoted, '"')) {
+            memmove(strchr(unquoted, '"'), strchr(unquoted, '"')+1, strchr(unquoted, '\0') - strchr(unquoted, '"'));
+        }
+    }
+
+    // Remove ending quote if it exists
+    if(strchr(unquoted, '"')) {
+        if(strchr(unquoted, '\0') - 1 == strchr(unquoted, '"')) {
+            memmove(strchr(unquoted, '"'), strchr(unquoted, '"')+1, strchr(unquoted, '\0') - strchr(unquoted, '"'));
+        }
+    }
+
+    return unquoted;
 }

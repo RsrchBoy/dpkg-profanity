@@ -1,7 +1,7 @@
 /*
  * roster_list.h
  *
- * Copyright (C) 2012 - 2014 James Booth <boothj5@gmail.com>
+ * Copyright (C) 2012 - 2015 James Booth <boothj5@gmail.com>
  *
  * This file is part of Profanity.
  *
@@ -57,12 +57,16 @@ gboolean roster_add(const char * const barejid, const char * const name, GSList 
     const char * const subscription, gboolean pending_out);
 char * roster_barejid_from_name(const char * const name);
 GSList * roster_get_contacts(void);
+GSList * roster_get_contacts_online(void);
 gboolean roster_has_pending_subscriptions(void);
-char * roster_find_contact(char *search_str);
-char * roster_find_resource(char *search_str);
+char * roster_contact_autocomplete(const char * const search_str);
+char * roster_fulljid_autocomplete(const char * const search_str);
 GSList * roster_get_group(const char * const group);
 GSList * roster_get_groups(void);
-char * roster_find_group(char *search_str);
-char * roster_find_jid(char *search_str);
+char * roster_group_autocomplete(const char * const search_str);
+char * roster_barejid_autocomplete(const char * const search_str);
+GSList * roster_get_contacts_by_presence(const char * const presence);
+GSList * roster_get_nogroup(void);
+char * roster_get_msg_display_name(const char * const barejid, const char * const resource);
 
 #endif

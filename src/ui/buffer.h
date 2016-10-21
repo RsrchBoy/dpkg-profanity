@@ -1,7 +1,7 @@
 /*
  * buffer.h
  *
- * Copyright (C) 2012 - 2014 James Booth <boothj5@gmail.com>
+ * Copyright (C) 2012 - 2015 James Booth <boothj5@gmail.com>
  *
  * This file is part of Profanity.
  *
@@ -36,21 +36,35 @@
 #define UI_BUFFER_H
 
 #include "config.h"
+#include "config/theme.h"
+
+#include <glib.h>
+
+typedef struct delivery_receipt_t {
+    char *id;
+    gboolean received;
+} DeliveryReceipt;
 
 typedef struct prof_buff_entry_t {
     char show_char;
-    char *date_fmt;
+    int pad_indent;
+    GDateTime *time;
     int flags;
-    int attrs;
+    theme_item_t theme_item;
     char *from;
     char *message;
+    DeliveryReceipt *receipt;
 } ProfBuffEntry;
 
 typedef struct prof_buff_t *ProfBuff;
 
 ProfBuff buffer_create();
 void buffer_free(ProfBuff buffer);
-void buffer_push(ProfBuff buffer, const char show_char, const char * const date_fmt, int flags, int attrs, const char * const from, const char * const message);
+void buffer_push(ProfBuff buffer, const char show_char, int pad_indent, GDateTime *time, int flags, theme_item_t theme_item,
+    const char * const from, const char * const message, DeliveryReceipt *receipt);
 int buffer_size(ProfBuff buffer);
 ProfBuffEntry* buffer_yield_entry(ProfBuff buffer, int entry);
+gboolean buffer_mark_received(ProfBuff buffer, const char * const id);
+
+
 #endif

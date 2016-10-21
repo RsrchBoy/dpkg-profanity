@@ -1,7 +1,7 @@
 /*
  * titlebar.h
  *
- * Copyright (C) 2012 - 2014 James Booth <boothj5@gmail.com>
+ * Copyright (C) 2012 - 2015 James Booth <boothj5@gmail.com>
  *
  * This file is part of Profanity.
  *
@@ -40,7 +40,7 @@ void title_bar_update_virtual(void);
 void title_bar_resize(void);
 void title_bar_console(void);
 void title_bar_set_presence(contact_presence_t presence);
-void title_bar_set_recipient(const char * const from);
+void title_bar_switch(void);
 void title_bar_set_typing(gboolean is_typing);
 
 #endif

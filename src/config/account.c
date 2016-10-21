@@ -1,7 +1,7 @@
 /*
  * account.c
  *
- * Copyright (C) 2012 - 2014 James Booth <boothj5@gmail.com>
+ * Copyright (C) 2012 - 2015 James Booth <boothj5@gmail.com>
  *
  * This file is part of Profanity.
  *
@@ -34,48 +34,56 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 
 #include <glib.h>
 
 #include "jid.h"
 #include "config/account.h"
 #include "common.h"
+#include "log.h"
 
 ProfAccount*
 account_new(const gchar * const name, const gchar * const jid,
-    const gchar * const password, gboolean enabled, const gchar * const server,
+    const gchar * const password, const gchar * eval_password, gboolean enabled, const gchar * const server,
     int port, const gchar * const resource, const gchar * const last_presence,
     const gchar * const login_presence, int priority_online, int priority_chat,
     int priority_away, int priority_xa, int priority_dnd,
     const gchar * const muc_service, const gchar * const muc_nick,
     const gchar * const otr_policy, GList *otr_manual, GList *otr_opportunistic,
-    GList *otr_always)
+    GList *otr_always, const gchar * const pgp_keyid)
 {
     ProfAccount *new_account = malloc(sizeof(ProfAccount));
 
     new_account->name = strdup(name);
 
-    if (jid != NULL) {
+    if (jid) {
         new_account->jid = strdup(jid);
     } else {
         new_account->jid = strdup(name);
     }
 
-    if (password != NULL) {
+    if (password) {
         new_account->password = strdup(password);
     } else {
         new_account->password = NULL;
     }
 
+    if (eval_password) {
+        new_account->eval_password = strdup(eval_password);
+    } else {
+        new_account->eval_password = NULL;
+    }
+
     new_account->enabled = enabled;
 
-    if (server != NULL) {
+    if (server) {
         new_account->server = strdup(server);
     } else {
         new_account->server = NULL;
     }
 
-    if (resource != NULL) {
+    if (resource) {
         new_account->resource = strdup(resource);
     } else {
         new_account->resource = NULL;
@@ -126,7 +134,7 @@ account_new(const gchar * const name, const gchar * const jid,
         new_account->muc_nick = strdup(muc_nick);
     }
 
-    if (otr_policy != NULL) {
+    if (otr_policy) {
         new_account->otr_policy = strdup(otr_policy);
     } else {
         new_account->otr_policy = NULL;
@@ -136,26 +144,71 @@ account_new(const gchar * const name, const gchar * const jid,
     new_account->otr_opportunistic = otr_opportunistic;
     new_account->otr_always = otr_always;
 
+    if (pgp_keyid != NULL) {
+        new_account->pgp_keyid = strdup(pgp_keyid);
+    } else {
+        new_account->pgp_keyid = NULL;
+    }
+
     return new_account;
 }
 
 char *
 account_create_full_jid(ProfAccount *account)
 {
-    if (account->resource != NULL) {
+    if (account->resource) {
         return create_fulljid(account->jid, account->resource);
     } else {
         return strdup(account->jid);
     }
 }
 
+gboolean
+account_eval_password(ProfAccount *account)
+{
+    assert(account != NULL);
+    assert(account->eval_password != NULL);
+
+    // Evaluate as shell command to retrieve password
+    GString *cmd = g_string_new("");
+    g_string_append_printf(cmd, "%s 2>/dev/null", account->eval_password);
+
+    FILE *stream = popen(cmd->str, "r");
+    g_string_free(cmd, TRUE);
+    if (stream) {
+        // Limit to READ_BUF_SIZE bytes to prevent overflows in the case of a poorly chosen command
+        account->password = g_malloc(READ_BUF_SIZE);
+        if (!account->password) {
+            log_error("Failed to allocate enough memory to read eval_password output");
+            return FALSE;
+        }
+        account->password = fgets(account->password, READ_BUF_SIZE, stream);
+        pclose(stream);
+        if (!account->password) {
+            log_error("No result from eval_password.");
+            return FALSE;
+        }
+
+        // strip trailing newline
+        if (g_str_has_suffix(account->password, "\n")) {
+            account->password[strlen(account->password)-1] = '\0';
+        }
+    } else {
+        log_error("popen failed when running eval_password.");
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
 void
 account_free(ProfAccount *account)
 {
-    if (account != NULL) {
+    if (account) {
         free(account->name);
         free(account->jid);
         free(account->password);
+        free(account->eval_password);
         free(account->resource);
         free(account->server);
         free(account->last_presence);
@@ -163,6 +216,7 @@ account_free(ProfAccount *account)
         free(account->muc_service);
         free(account->muc_nick);
         free(account->otr_policy);
+        free(account->pgp_keyid);
         g_list_free_full(account->otr_manual, g_free);
         g_list_free_full(account->otr_opportunistic, g_free);
         g_list_free_full(account->otr_always, g_free);

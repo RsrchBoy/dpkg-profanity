@@ -1,7 +1,7 @@
 #                                               -*- Autoconf -*-
 # Process this file with autoconf to produce a configure script.
 
-AC_INIT([profanity], [0.4.5], [boothj5web@gmail.com])
+AC_INIT([profanity], [0.4.7], [boothj5web@gmail.com])
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_SRCDIR([src/main.c])
 AC_CONFIG_HEADERS([src/config.h])
@@ -10,6 +10,9 @@ AM_INIT_AUTOMAKE([foreign subdir-objects])
 
 ### Checks for programs.
 AC_PROG_CC
+
+## Check for LFS
+AC_SYS_LARGEFILE
 
 ### Get canonical host
 AC_CANONICAL_HOST
@@ -34,12 +37,16 @@ AC_DEFINE_UNQUOTED([PACKAGE_STATUS], ["$PACKAGE_STATUS"], [Status of this build]
 
 AS_IF([test "x$PLATFORM" = xcygwin],
     [AC_DEFINE([PLATFORM_CYGWIN], [1], [Cygwin])])
+AS_IF([test "x$PLATFORM" = xosx],
+    [AC_DEFINE([PLATFORM_OSX], [1], [OSx])])
 
 ### Options
 AC_ARG_ENABLE([notifications],
     [AS_HELP_STRING([--enable-notifications], [enable desktop notifications])])
 AC_ARG_ENABLE([otr],
     [AS_HELP_STRING([--enable-otr], [enable otr encryption])])
+AC_ARG_ENABLE([pgp],
+    [AS_HELP_STRING([--enable-pgp], [enable pgp])])
 AC_ARG_WITH([libxml2],
     [AS_HELP_STRING([--with-libxml2], [link with libxml2 instead of expat])])
 AC_ARG_WITH([xscreensaver],
@@ -134,10 +141,23 @@ PKG_CHECK_MODULES([glib], [glib-2.0 >= 2.26], [],
 PKG_CHECK_MODULES([curl], [libcurl], [],
     [AC_MSG_ERROR([libcurl is required for profanity])])
 
+AS_IF([test "x$PLATFORM" != xosx],
+    [AC_CHECK_LIB([readline], [main], [],
+        [AC_MSG_ERROR([libreadline is required for profanity])])],
+    [AC_CHECK_FILE([/usr/local/opt/readline/lib],
+        [LIBS="-lreadline $LIBS"
+            AM_CPPFLAGS="-I/usr/local/opt/readline/include $AM_CPPFLAGS"
+            AM_LDFLAGS="-L/usr/local/opt/readline/lib $AM_LDFLAGS"
+            AC_SUBST(AM_LDFLAGS)],
+        [AC_MSG_ERROR([libreadline is required for profanity])])])
+
+AC_CHECK_LIB([uuid], [uuid_generate], [],
+    [AC_MSG_ERROR([libuuid is required for profanity])])
+
 AS_IF([test "x$PLATFORM" = xosx], [LIBS="-lcurl $LIBS"])
 
 ### Check for desktop notification support
-### Linux requires libnotify
+### Linux/FreeBSD require libnotify
 ### Windows uses native OS calls
 ### OSX requires terminal-notifier
 
@@ -150,7 +170,7 @@ AS_IF([test "x$PLATFORM" = xosx],
                     [AC_MSG_ERROR([terminal-notifier not found, required for desktop notifications.])],
                     [AC_MSG_NOTICE([Desktop notifications not supported.])])],
                 [AC_DEFINE([HAVE_OSXNOTIFY], [1], [terminal notifier])])])],
-    [test "x$PLATFORM" = xnix],
+    [test "x$PLATFORM" = xnix -o "x$PLATFORM" = xfreebsd],
         [AS_IF([test "x$enable_notifications" != xno],
             [PKG_CHECK_MODULES([libnotify], [libnotify],
                 [AC_DEFINE([HAVE_LIBNOTIFY], [1], [libnotify module])],
@@ -171,10 +191,24 @@ elif test "x$with_xscreensaver" = x; then
         [AC_MSG_NOTICE([libX11 not found, falling back to profanity auto-away])])
 fi
 
+AM_CONDITIONAL([BUILD_PGP], [false])
+if test "x$enable_pgp" != xno; then
+    AC_CHECK_LIB([gpgme], [main],
+        [AM_CONDITIONAL([BUILD_PGP], [true])
+         AC_DEFINE([HAVE_LIBGPGME], [1], [Have libgpgme])
+         AC_PATH_PROG([GPGME_CONFIG], [gpgme-config], ["failed"])
+         AS_IF([test "x$GPGME_CONFIG" = xfailed],
+            [LIBS="-lgpgme $LIBS"],
+            [LIBS="`$GPGME_CONFIG --libs` $LIBS" AM_CPPFLAGS="`$GPGME_CONFIG --cflags` $AM_CPPFLAGS"])],
+        [AS_IF([test "x$enable_pgp" = xyes],
+            [AC_MSG_ERROR([libgpgme is required for pgp support])],
+            [AC_MSG_NOTICE([libgpgme not found, pgp support not enabled])])])
+fi
+
 AM_CONDITIONAL([BUILD_OTR], [false])
 AM_CONDITIONAL([BUILD_OTR3], [false])
 AM_CONDITIONAL([BUILD_OTR4], [false])
-if test "x$enable_otr" = xyes; then
+if test "x$enable_otr" != xno; then
     AC_SEARCH_LIBS([otrl_init], [otr],
         [AC_COMPILE_IFELSE(
             [AC_LANG_PROGRAM([[
@@ -188,22 +222,9 @@ if test "x$enable_otr" = xyes; then
             ]])],
             [AM_CONDITIONAL([BUILD_OTR], [true]) AM_CONDITIONAL([BUILD_OTR4], [true]) AC_DEFINE([HAVE_LIBOTR], [1], [Have libotr])],
             [AM_CONDITIONAL([BUILD_OTR], [true]) AM_CONDITIONAL([BUILD_OTR3], [true]) AC_DEFINE([HAVE_LIBOTR], [1], [Have libotr])])],
-        [AC_MSG_ERROR([libotr is required for otr encryption support])])
-elif test "x$enable_otr" = x; then
-    AC_SEARCH_LIBS([otrl_init], [otr],
-        [AC_COMPILE_IFELSE(
-            [AC_LANG_PROGRAM([[
-            #include <libotr/version.h>
-            ]],[[
-            #if OTRL_VERSION_MAJOR == 4
-            // OK
-            #else
-            # assume version 3
-            #endif
-            ]])],
-            [AM_CONDITIONAL([BUILD_OTR], [true]) AM_CONDITIONAL([BUILD_OTR4], [true]) AC_DEFINE([HAVE_LIBOTR], [1], [Have libotr])],
-            [AM_CONDITIONAL([BUILD_OTR], [true]) AM_CONDITIONAL([BUILD_OTR3], [true]) AC_DEFINE([HAVE_LIBOTR], [1], [Have libotr])])],
-        [AC_MSG_NOTICE([libotr not found, otr encryption support not enabled])])
+        [AS_IF([test "x$enable_otr" = xyes],
+            [AC_MSG_ERROR([libotr is required for otr encryption support])],
+            [AC_MSG_NOTICE([libotr not found, otr encryption support not enabled])])])
 fi
 
 AS_IF([test "x$with_themes" = xno],
@@ -219,6 +240,13 @@ AM_CONDITIONAL([THEMES_INSTALL], "$THEMES_INSTALL")
 ### TODO: pass cmocka_CFLAGS and cmocka_LIBS to Makefile.am
 PKG_CHECK_MODULES([cmocka], [cmocka], [],
     [AC_MSG_NOTICE([cmocka is not found, will not be able to run tests])])
+
+AM_CONDITIONAL([HAVE_STABBER], [false])
+AC_CHECK_LIB([stabber], [stbbr_start], [AM_CONDITIONAL([HAVE_STABBER], [true])],
+    [AC_MSG_NOTICE([libstabber not found, will not be able to run functional tests])])
+AM_CONDITIONAL([HAVE_EXPECT], [false])
+AC_CHECK_LIB([expect], [main], [AM_CONDITIONAL([HAVE_EXPECT], [true])],
+    [AC_MSG_NOTICE([libexpect not found, will not be able to run functional tests])])
 
 ### Check for ncursesw/ncurses.h first, Arch linux uses ncurses.h for ncursesw
 AC_CHECK_HEADERS([ncursesw/ncurses.h], [], [])

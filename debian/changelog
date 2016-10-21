@@ -1,3 +1,23 @@
+profanity (0.4.7-1) unstable; urgency=medium
+
+  * Imported Upstream version 0.4.7
+  * Removed d/patches/add-cflags-linking.patch
+  * Added fix-spelling patch
+  * d/control:
+    - added libreadline-dev to Build-Deps
+    - added libgpgme11-dev to Build-Deps
+    - added uuid-dev to Build-Deps
+  * d/rules:
+    - enabled gpg support
+
+ -- Dariusz Dwornikowski <dariusz.dwornikowski@cs.put.poznan.pl>  Sat, 26 Sep 2015 16:47:33 +0200
+
+profanity (0.4.6-1) unstable; urgency=medium
+
+  * Imported Upstream version 0.4.6 (Closes: #780362)
+
+ -- Dariusz Dwornikowski <dariusz.dwornikowski@cs.put.poznan.pl>  Fri, 13 Mar 2015 08:12:50 +0100
+
 profanity (0.4.5-1~14.04~ppa1) trusty; urgency=medium
 
   * Build for trusty.

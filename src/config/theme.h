@@ -1,7 +1,7 @@
 /*
  * theme.h
  *
- * Copyright (C) 2012 - 2014 James Booth <boothj5@gmail.com>
+ * Copyright (C) 2012 - 2015 James Booth <boothj5@gmail.com>
  *
  * This file is part of Profanity.
  *
@@ -38,52 +38,79 @@
 #include "config.h"
 
 #include <glib.h>
-#ifdef HAVE_NCURSESW_NCURSES_H
-#include <ncursesw/ncurses.h>
-#elif HAVE_NCURSES_H
-#include <ncurses.h>
-#endif
 
-#define COLOUR_TEXT                     COLOR_PAIR(1)
-#define COLOUR_SPLASH                   COLOR_PAIR(2)
-#define COLOUR_ERROR                    COLOR_PAIR(3)
-#define COLOUR_INCOMING                 COLOR_PAIR(4)
-#define COLOUR_INPUT_TEXT               COLOR_PAIR(5)
-#define COLOUR_TIME                     COLOR_PAIR(6)
-#define COLOUR_TITLE_TEXT               COLOR_PAIR(7)
-#define COLOUR_TITLE_BRACKET            COLOR_PAIR(8)
-#define COLOUR_TITLE_UNENCRYPTED        COLOR_PAIR(9)
-#define COLOUR_TITLE_ENCRYPTED          COLOR_PAIR(10)
-#define COLOUR_TITLE_UNTRUSTED          COLOR_PAIR(11)
-#define COLOUR_TITLE_TRUSTED            COLOR_PAIR(12)
-#define COLOUR_STATUS_TEXT              COLOR_PAIR(13)
-#define COLOUR_STATUS_BRACKET           COLOR_PAIR(14)
-#define COLOUR_STATUS_ACTIVE            COLOR_PAIR(15)
-#define COLOUR_STATUS_NEW               COLOR_PAIR(16)
-#define COLOUR_ME                       COLOR_PAIR(17)
-#define COLOUR_THEM                     COLOR_PAIR(18)
-#define COLOUR_ROOMINFO                 COLOR_PAIR(19)
-#define COLOUR_ROOMMENTION              COLOR_PAIR(20)
-#define COLOUR_ONLINE                   COLOR_PAIR(21)
-#define COLOUR_OFFLINE                  COLOR_PAIR(22)
-#define COLOUR_AWAY                     COLOR_PAIR(23)
-#define COLOUR_CHAT                     COLOR_PAIR(24)
-#define COLOUR_DND                      COLOR_PAIR(25)
-#define COLOUR_XA                       COLOR_PAIR(26)
-#define COLOUR_TYPING                   COLOR_PAIR(27)
-#define COLOUR_GONE                     COLOR_PAIR(28)
-#define COLOUR_SUBSCRIBED               COLOR_PAIR(29)
-#define COLOUR_UNSUBSCRIBED             COLOR_PAIR(30)
-#define COLOUR_OTR_STARTED_TRUSTED      COLOR_PAIR(31)
-#define COLOUR_OTR_STARTED_UNTRUSTED    COLOR_PAIR(32)
-#define COLOUR_OTR_ENDED                COLOR_PAIR(33)
-#define COLOUR_OTR_TRUSTED              COLOR_PAIR(34)
-#define COLOUR_OTR_UNTRUSTED            COLOR_PAIR(35)
+typedef enum {
+    THEME_TEXT,
+    THEME_TEXT_ME,
+    THEME_TEXT_THEM,
+    THEME_SPLASH,
+    THEME_ERROR,
+    THEME_INCOMING,
+    THEME_INPUT_TEXT,
+    THEME_TIME,
+    THEME_TITLE_TEXT,
+    THEME_TITLE_BRACKET,
+    THEME_TITLE_UNENCRYPTED,
+    THEME_TITLE_ENCRYPTED,
+    THEME_TITLE_UNTRUSTED,
+    THEME_TITLE_TRUSTED,
+    THEME_TITLE_ONLINE,
+    THEME_TITLE_OFFLINE,
+    THEME_TITLE_AWAY,
+    THEME_TITLE_CHAT,
+    THEME_TITLE_DND,
+    THEME_TITLE_XA,
+    THEME_STATUS_TEXT,
+    THEME_STATUS_BRACKET,
+    THEME_STATUS_ACTIVE,
+    THEME_STATUS_NEW,
+    THEME_ME,
+    THEME_THEM,
+    THEME_ROOMINFO,
+    THEME_ROOMMENTION,
+    THEME_ONLINE,
+    THEME_OFFLINE,
+    THEME_AWAY,
+    THEME_CHAT,
+    THEME_DND,
+    THEME_XA,
+    THEME_TYPING,
+    THEME_GONE,
+    THEME_SUBSCRIBED,
+    THEME_UNSUBSCRIBED,
+    THEME_OTR_STARTED_TRUSTED,
+    THEME_OTR_STARTED_UNTRUSTED,
+    THEME_OTR_ENDED,
+    THEME_OTR_TRUSTED,
+    THEME_OTR_UNTRUSTED,
+    THEME_OCCUPANTS_HEADER,
+    THEME_ROSTER_HEADER,
+    THEME_RECEIPT_SENT,
+    THEME_NONE,
+    THEME_WHITE,
+    THEME_WHITE_BOLD,
+    THEME_GREEN,
+    THEME_GREEN_BOLD,
+    THEME_RED,
+    THEME_RED_BOLD,
+    THEME_YELLOW,
+    THEME_YELLOW_BOLD,
+    THEME_BLUE,
+    THEME_BLUE_BOLD,
+    THEME_CYAN,
+    THEME_CYAN_BOLD,
+    THEME_BLACK,
+    THEME_BLACK_BOLD,
+    THEME_MAGENTA,
+    THEME_MAGENTA_BOLD
+} theme_item_t;
 
 void theme_init(const char * const theme_name);
 void theme_init_colours(void);
 gboolean theme_load(const char * const theme_name);
 GSList* theme_list(void);
 void theme_close(void);
+int theme_attrs(theme_item_t attrs);
+theme_item_t theme_main_presence_attrs(const char * const presence);
 
 #endif

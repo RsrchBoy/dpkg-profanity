@@ -1,7 +1,7 @@
 /*
  * window.c
  *
- * Copyright (C) 2012 - 2014 James Booth <boothj5@gmail.com>
+ * Copyright (C) 2012 - 2015 James Booth <boothj5@gmail.com>
  *
  * This file is part of Profanity.
  *
@@ -36,7 +36,9 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <assert.h>
+#include <wchar.h>
 
 #include <glib.h>
 #ifdef HAVE_NCURSESW_NCURSES_H
@@ -47,86 +49,456 @@
 
 #include "config/theme.h"
 #include "config/preferences.h"
+#include "roster_list.h"
 #include "ui/ui.h"
 #include "ui/window.h"
 #include "xmpp/xmpp.h"
 
-static void _win_print(ProfWin *window, const char show_char, const char * const date_fmt,
-    int flags, int attrs, const char * const from, const char * const message);
+#define CONS_WIN_TITLE "Profanity. Type /help for help information."
+#define XML_WIN_TITLE "XML Console"
 
+#define CEILING(X) (X-(int)(X) > 0 ? (int)(X+1) : (int)(X))
+
+static void _win_print(ProfWin *window, const char show_char, int pad_indent, GDateTime *time,
+    int flags, theme_item_t theme_item, const char * const from, const char * const message, DeliveryReceipt *receipt);
+static void _win_print_wrapped(WINDOW *win, const char * const message, size_t indent, int pad_indent);
+
+int
+win_roster_cols(void)
+{
+    int roster_win_percent = prefs_get_roster_size();
+    int cols = getmaxx(stdscr);
+    return CEILING( (((double)cols) / 100) * roster_win_percent);
+}
+
+int
+win_occpuants_cols(void)
+{
+    int occupants_win_percent = prefs_get_occupants_size();
+    int cols = getmaxx(stdscr);
+    return CEILING( (((double)cols) / 100) * occupants_win_percent);
+}
+
+static ProfLayout*
+_win_create_simple_layout(void)
+{
+    int cols = getmaxx(stdscr);
+
+    ProfLayoutSimple *layout = malloc(sizeof(ProfLayoutSimple));
+    layout->base.type = LAYOUT_SIMPLE;
+    layout->base.win = newpad(PAD_SIZE, cols);
+    wbkgd(layout->base.win, theme_attrs(THEME_TEXT));
+    layout->base.buffer = buffer_create();
+    layout->base.y_pos = 0;
+    layout->base.paged = 0;
+    scrollok(layout->base.win, TRUE);
+
+    return &layout->base;
+}
+
+static ProfLayout*
+_win_create_split_layout(void)
+{
+    int cols = getmaxx(stdscr);
+
+    ProfLayoutSplit *layout = malloc(sizeof(ProfLayoutSplit));
+    layout->base.type = LAYOUT_SPLIT;
+    layout->base.win = newpad(PAD_SIZE, cols);
+    wbkgd(layout->base.win, theme_attrs(THEME_TEXT));
+    layout->base.buffer = buffer_create();
+    layout->base.y_pos = 0;
+    layout->base.paged = 0;
+    scrollok(layout->base.win, TRUE);
+    layout->subwin = NULL;
+    layout->sub_y_pos = 0;
+    layout->memcheck = LAYOUT_SPLIT_MEMCHECK;
+
+    return &layout->base;
+}
 
 ProfWin*
-win_create(const char * const title, int cols, win_type_t type)
+win_create_console(void)
 {
-    ProfWin *new_win = malloc(sizeof(struct prof_win_t));
-    new_win->from = strdup(title);
+    ProfConsoleWin *new_win = malloc(sizeof(ProfConsoleWin));
+    new_win->window.type = WIN_CONSOLE;
+    new_win->window.layout = _win_create_split_layout();
 
-    if (type == WIN_MUC && prefs_get_boolean(PREF_OCCUPANTS)) {
-        new_win->win = newpad(PAD_SIZE, (cols/OCCUPANT_WIN_RATIO) * (OCCUPANT_WIN_RATIO-1));
-        wbkgd(new_win->win, COLOUR_TEXT);
+    return &new_win->window;
+}
 
-        new_win->subwin = newpad(PAD_SIZE, OCCUPANT_WIN_WIDTH);
-        wbkgd(new_win->subwin, COLOUR_TEXT);
+ProfWin*
+win_create_chat(const char * const barejid)
+{
+    ProfChatWin *new_win = malloc(sizeof(ProfChatWin));
+    new_win->window.type = WIN_CHAT;
+    new_win->window.layout = _win_create_simple_layout();
+
+    new_win->barejid = strdup(barejid);
+    new_win->resource_override = NULL;
+    new_win->is_otr = FALSE;
+    new_win->otr_is_trusted = FALSE;
+    new_win->pgp_recv = FALSE;
+    new_win->pgp_send = FALSE;
+    new_win->history_shown = FALSE;
+    new_win->unread = 0;
+    new_win->state = chat_state_new();
+
+    new_win->memcheck = PROFCHATWIN_MEMCHECK;
+
+    return &new_win->window;
+}
+
+ProfWin*
+win_create_muc(const char * const roomjid)
+{
+    ProfMucWin *new_win = malloc(sizeof(ProfMucWin));
+    int cols = getmaxx(stdscr);
+
+    new_win->window.type = WIN_MUC;
+
+    ProfLayoutSplit *layout = malloc(sizeof(ProfLayoutSplit));
+    layout->base.type = LAYOUT_SPLIT;
+
+    if (prefs_get_boolean(PREF_OCCUPANTS)) {
+        int subwin_cols = win_occpuants_cols();
+        layout->base.win = newpad(PAD_SIZE, cols - subwin_cols);
+        wbkgd(layout->base.win, theme_attrs(THEME_TEXT));
+        layout->subwin = newpad(PAD_SIZE, subwin_cols);;
+        wbkgd(layout->subwin, theme_attrs(THEME_TEXT));
     } else {
-        new_win->win = newpad(PAD_SIZE, (cols));
-        wbkgd(new_win->win, COLOUR_TEXT);
+        layout->base.win = newpad(PAD_SIZE, (cols));
+        wbkgd(layout->base.win, theme_attrs(THEME_TEXT));
+        layout->subwin = NULL;
+    }
+    layout->sub_y_pos = 0;
+    layout->memcheck = LAYOUT_SPLIT_MEMCHECK;
+    layout->base.buffer = buffer_create();
+    layout->base.y_pos = 0;
+    layout->base.paged = 0;
+    scrollok(layout->base.win, TRUE);
+    new_win->window.layout = (ProfLayout*)layout;
 
-        new_win->subwin = NULL;
+    new_win->roomjid = strdup(roomjid);
+    new_win->unread = 0;
+    if (prefs_get_boolean(PREF_OCCUPANTS_JID)) {
+        new_win->showjid = TRUE;
+    } else {
+        new_win->showjid = FALSE;
     }
 
-    new_win->buffer = buffer_create();
-    new_win->y_pos = 0;
-    new_win->sub_y_pos = 0;
-    new_win->paged = 0;
-    new_win->unread = 0;
-    new_win->history_shown = 0;
-    new_win->type = type;
-    new_win->is_otr = FALSE;
-    new_win->is_trusted = FALSE;
-    new_win->form = NULL;
-    scrollok(new_win->win, TRUE);
+    new_win->memcheck = PROFMUCWIN_MEMCHECK;
 
-    return new_win;
+    return &new_win->window;
+}
+
+ProfWin*
+win_create_muc_config(const char * const roomjid, DataForm *form)
+{
+    ProfMucConfWin *new_win = malloc(sizeof(ProfMucConfWin));
+    new_win->window.type = WIN_MUC_CONFIG;
+    new_win->window.layout = _win_create_simple_layout();
+
+    new_win->roomjid = strdup(roomjid);
+    new_win->form = form;
+
+    new_win->memcheck = PROFCONFWIN_MEMCHECK;
+
+    return &new_win->window;
+}
+
+ProfWin*
+win_create_private(const char * const fulljid)
+{
+    ProfPrivateWin *new_win = malloc(sizeof(ProfPrivateWin));
+    new_win->window.type = WIN_PRIVATE;
+    new_win->window.layout = _win_create_simple_layout();
+
+    new_win->fulljid = strdup(fulljid);
+    new_win->unread = 0;
+
+    new_win->memcheck = PROFPRIVATEWIN_MEMCHECK;
+
+    return &new_win->window;
+}
+
+ProfWin*
+win_create_xmlconsole(void)
+{
+    ProfXMLWin *new_win = malloc(sizeof(ProfXMLWin));
+    new_win->window.type = WIN_XML;
+    new_win->window.layout = _win_create_simple_layout();
+
+    new_win->memcheck = PROFXMLWIN_MEMCHECK;
+
+    return &new_win->window;
+}
+
+char *
+win_get_title(ProfWin *window)
+{
+    if (window == NULL) {
+        return strdup(CONS_WIN_TITLE);
+    }
+    if (window->type == WIN_CONSOLE) {
+        return strdup(CONS_WIN_TITLE);
+    }
+    if (window->type == WIN_CHAT) {
+        ProfChatWin *chatwin = (ProfChatWin*) window;
+        assert(chatwin->memcheck == PROFCHATWIN_MEMCHECK);
+        PContact contact = roster_get_contact(chatwin->barejid);
+        if (contact) {
+            const char *name = p_contact_name_or_jid(contact);
+            return strdup(name);
+        } else {
+            return strdup(chatwin->barejid);
+        }
+    }
+    if (window->type == WIN_MUC) {
+        ProfMucWin *mucwin = (ProfMucWin*) window;
+        assert(mucwin->memcheck == PROFMUCWIN_MEMCHECK);
+        return strdup(mucwin->roomjid);
+    }
+    if (window->type == WIN_MUC_CONFIG) {
+        ProfMucConfWin *confwin = (ProfMucConfWin*) window;
+        assert(confwin->memcheck == PROFCONFWIN_MEMCHECK);
+        GString *title = g_string_new(confwin->roomjid);
+        g_string_append(title, " config");
+        if (confwin->form->modified) {
+            g_string_append(title, " *");
+        }
+        char *title_str = title->str;
+        g_string_free(title, FALSE);
+        return title_str;
+    }
+    if (window->type == WIN_PRIVATE) {
+        ProfPrivateWin *privatewin = (ProfPrivateWin*) window;
+        assert(privatewin->memcheck == PROFPRIVATEWIN_MEMCHECK);
+        return strdup(privatewin->fulljid);
+    }
+    if (window->type == WIN_XML) {
+        return strdup(XML_WIN_TITLE);
+    }
+
+    return NULL;
 }
 
 void
 win_hide_subwin(ProfWin *window)
 {
-    if (window->subwin) {
-        delwin(window->subwin);
-    }
-    window->subwin = NULL;
-    window->sub_y_pos = 0;
-
-    int cols = getmaxx(stdscr);
-    wresize(window->win, PAD_SIZE, cols);
-    win_redraw(window);
-}
-
-void
-win_show_subwin(ProfWin *window)
-{
-    if (!window->subwin) {
-        window->subwin = newpad(PAD_SIZE, OCCUPANT_WIN_WIDTH);
-        wbkgd(window->subwin, COLOUR_TEXT);
-
+    if (window->layout->type == LAYOUT_SPLIT) {
+        ProfLayoutSplit *layout = (ProfLayoutSplit*)window->layout;
+        if (layout->subwin) {
+            delwin(layout->subwin);
+        }
+        layout->subwin = NULL;
+        layout->sub_y_pos = 0;
         int cols = getmaxx(stdscr);
-        wresize(window->win, PAD_SIZE, (cols/OCCUPANT_WIN_RATIO) * (OCCUPANT_WIN_RATIO-1));
+        wresize(layout->base.win, PAD_SIZE, cols);
+        win_redraw(window);
+    } else {
+        int cols = getmaxx(stdscr);
+        wresize(window->layout->win, PAD_SIZE, cols);
         win_redraw(window);
     }
 }
 
 void
+win_show_subwin(ProfWin *window)
+{
+    int cols = getmaxx(stdscr);
+    int subwin_cols = 0;
+
+    if (window->layout->type != LAYOUT_SPLIT) {
+        return;
+    }
+
+    if (window->type == WIN_MUC) {
+        subwin_cols = win_occpuants_cols();
+    } else if (window->type == WIN_CONSOLE) {
+        subwin_cols = win_roster_cols();
+    }
+
+    ProfLayoutSplit *layout = (ProfLayoutSplit*)window->layout;
+    layout->subwin = newpad(PAD_SIZE, subwin_cols);
+    wbkgd(layout->subwin, theme_attrs(THEME_TEXT));
+    wresize(layout->base.win, PAD_SIZE, cols - subwin_cols);
+    win_redraw(window);
+}
+
+void
 win_free(ProfWin* window)
 {
-    buffer_free(window->buffer);
-    delwin(window->win);
-    if (window->subwin) {
-        delwin(window->subwin);
+    if (window->layout->type == LAYOUT_SPLIT) {
+        ProfLayoutSplit *layout = (ProfLayoutSplit*)window->layout;
+        if (layout->subwin) {
+            delwin(layout->subwin);
+        }
+        buffer_free(layout->base.buffer);
+        delwin(layout->base.win);
+    } else {
+        buffer_free(window->layout->buffer);
+        delwin(window->layout->win);
     }
-    free(window->from);
-    form_destroy(window->form);
+    free(window->layout);
+
+    if (window->type == WIN_CHAT) {
+        ProfChatWin *chatwin = (ProfChatWin*)window;
+        free(chatwin->barejid);
+        free(chatwin->resource_override);
+        chat_state_free(chatwin->state);
+    }
+
+    if (window->type == WIN_MUC) {
+        ProfMucWin *mucwin = (ProfMucWin*)window;
+        free(mucwin->roomjid);
+    }
+
+    if (window->type == WIN_MUC_CONFIG) {
+        ProfMucConfWin *mucconf = (ProfMucConfWin*)window;
+        free(mucconf->roomjid);
+        form_destroy(mucconf->form);
+    }
+
+    if (window->type == WIN_PRIVATE) {
+        ProfPrivateWin *privatewin = (ProfPrivateWin*)window;
+        free(privatewin->fulljid);
+    }
+
     free(window);
+}
+
+void
+win_page_up(ProfWin *window)
+{
+    int rows = getmaxy(stdscr);
+    int y = getcury(window->layout->win);
+    int page_space = rows - 4;
+    int *page_start = &(window->layout->y_pos);
+
+    *page_start -= page_space;
+
+    // went past beginning, show first page
+    if (*page_start < 0)
+        *page_start = 0;
+
+    window->layout->paged = 1;
+    win_update_virtual(window);
+
+    // switch off page if last line and space line visible
+    if ((y) - *page_start == page_space) {
+        window->layout->paged = 0;
+    }
+}
+
+void
+win_page_down(ProfWin *window)
+{
+    int rows = getmaxy(stdscr);
+    int y = getcury(window->layout->win);
+    int page_space = rows - 4;
+    int *page_start = &(window->layout->y_pos);
+
+    *page_start += page_space;
+
+    // only got half a screen, show full screen
+    if ((y - (*page_start)) < page_space)
+        *page_start = y - page_space;
+
+    // went past end, show full screen
+    else if (*page_start >= y)
+        *page_start = y - page_space - 1;
+
+    window->layout->paged = 1;
+    win_update_virtual(window);
+
+    // switch off page if last line and space line visible
+    if ((y) - *page_start == page_space) {
+        window->layout->paged = 0;
+    }
+}
+
+void
+win_sub_page_down(ProfWin *window)
+{
+
+    if (window->layout->type == LAYOUT_SPLIT) {
+        int rows = getmaxy(stdscr);
+        int page_space = rows - 4;
+        ProfLayoutSplit *split_layout = (ProfLayoutSplit*)window->layout;
+        int sub_y = getcury(split_layout->subwin);
+        int *sub_y_pos = &(split_layout->sub_y_pos);
+
+        *sub_y_pos += page_space;
+
+        // only got half a screen, show full screen
+        if ((sub_y- (*sub_y_pos)) < page_space)
+            *sub_y_pos = sub_y - page_space;
+
+        // went past end, show full screen
+        else if (*sub_y_pos >= sub_y)
+            *sub_y_pos = sub_y - page_space - 1;
+
+        win_update_virtual(window);
+    }
+}
+
+void
+win_sub_page_up(ProfWin *window)
+{
+    if (window->layout->type == LAYOUT_SPLIT) {
+        int rows = getmaxy(stdscr);
+        int page_space = rows - 4;
+        ProfLayoutSplit *split_layout = (ProfLayoutSplit*)window->layout;
+        int *sub_y_pos = &(split_layout->sub_y_pos);
+
+        *sub_y_pos -= page_space;
+
+        // went past beginning, show first page
+        if (*sub_y_pos < 0)
+            *sub_y_pos = 0;
+
+        win_update_virtual(window);
+    }
+}
+
+void
+win_clear(ProfWin *window)
+{
+    werase(window->layout->win);
+    win_update_virtual(window);
+}
+
+void
+win_resize(ProfWin *window)
+{
+    int subwin_cols = 0;
+    int cols = getmaxx(stdscr);
+
+    if (window->layout->type == LAYOUT_SPLIT) {
+        ProfLayoutSplit *layout = (ProfLayoutSplit*)window->layout;
+        if (layout->subwin) {
+            if (window->type == WIN_CONSOLE) {
+                subwin_cols = win_roster_cols();
+            } else if (window->type == WIN_MUC) {
+                subwin_cols = win_occpuants_cols();
+            }
+            wresize(layout->base.win, PAD_SIZE, cols - subwin_cols);
+            wresize(layout->subwin, PAD_SIZE, subwin_cols);
+            if (window->type == WIN_CONSOLE) {
+                rosterwin_roster();
+            } else if (window->type == WIN_MUC) {
+                ProfMucWin *mucwin = (ProfMucWin *)window;
+                assert(mucwin->memcheck == PROFMUCWIN_MEMCHECK);
+                occupantswin_occupants(mucwin->roomjid);
+            }
+        } else {
+            wresize(layout->base.win, PAD_SIZE, cols);
+        }
+    } else {
+        wresize(window->layout->win, PAD_SIZE, cols);
+    }
+
+    win_redraw(window);
 }
 
 void
@@ -134,45 +506,69 @@ win_update_virtual(ProfWin *window)
 {
     int rows, cols;
     getmaxyx(stdscr, rows, cols);
+    int subwin_cols = 0;
 
-    if ((window->type == WIN_MUC) && (window->subwin)) {
-        pnoutrefresh(window->win, window->y_pos, 0, 1, 0, rows-3, ((cols/OCCUPANT_WIN_RATIO) * (OCCUPANT_WIN_RATIO-1)) -1);
-        pnoutrefresh(window->subwin, window->sub_y_pos, 0, 1, (cols/OCCUPANT_WIN_RATIO) * (OCCUPANT_WIN_RATIO-1), rows-3, cols-1);
+    if (window->layout->type == LAYOUT_SPLIT) {
+        ProfLayoutSplit *layout = (ProfLayoutSplit*)window->layout;
+        if (layout->subwin) {
+            if (window->type == WIN_MUC) {
+                subwin_cols = win_occpuants_cols();
+            } else {
+                subwin_cols = win_roster_cols();
+            }
+            pnoutrefresh(layout->base.win, layout->base.y_pos, 0, 1, 0, rows-3, (cols-subwin_cols)-1);
+            pnoutrefresh(layout->subwin, layout->sub_y_pos, 0, 1, (cols-subwin_cols), rows-3, cols-1);
+        } else {
+            pnoutrefresh(layout->base.win, layout->base.y_pos, 0, 1, 0, rows-3, cols-1);
+        }
     } else {
-        pnoutrefresh(window->win, window->y_pos, 0, 1, 0, rows-3, cols-1);
+        pnoutrefresh(window->layout->win, window->layout->y_pos, 0, 1, 0, rows-3, cols-1);
+    }
+}
+
+void
+win_refresh_without_subwin(ProfWin *window)
+{
+    int rows, cols;
+    getmaxyx(stdscr, rows, cols);
+
+    if ((window->type == WIN_MUC) || (window->type == WIN_CONSOLE)) {
+        pnoutrefresh(window->layout->win, window->layout->y_pos, 0, 1, 0, rows-3, cols-1);
+    }
+}
+
+void
+win_refresh_with_subwin(ProfWin *window)
+{
+    int rows, cols;
+    getmaxyx(stdscr, rows, cols);
+    int subwin_cols = 0;
+
+    if (window->type == WIN_MUC) {
+        ProfLayoutSplit *layout = (ProfLayoutSplit*)window->layout;
+        subwin_cols = win_occpuants_cols();
+        pnoutrefresh(layout->base.win, layout->base.y_pos, 0, 1, 0, rows-3, (cols-subwin_cols)-1);
+        pnoutrefresh(layout->subwin, layout->sub_y_pos, 0, 1, (cols-subwin_cols), rows-3, cols-1);
+    } else if (window->type == WIN_CONSOLE) {
+        ProfLayoutSplit *layout = (ProfLayoutSplit*)window->layout;
+        subwin_cols = win_roster_cols();
+        pnoutrefresh(layout->base.win, layout->base.y_pos, 0, 1, 0, rows-3, (cols-subwin_cols)-1);
+        pnoutrefresh(layout->subwin, layout->sub_y_pos, 0, 1, (cols-subwin_cols), rows-3, cols-1);
     }
 }
 
 void
 win_move_to_end(ProfWin *window)
 {
-    window->paged = 0;
+    window->layout->paged = 0;
 
     int rows = getmaxy(stdscr);
-    int y = getcury(window->win);
+    int y = getcury(window->layout->win);
     int size = rows - 3;
 
-    window->y_pos = y - (size - 1);
-    if (window->y_pos < 0) {
-        window->y_pos = 0;
-    }
-}
-
-int
-win_presence_colour(const char * const presence)
-{
-    if (g_strcmp0(presence, "online") == 0) {
-        return COLOUR_ONLINE;
-    } else if (g_strcmp0(presence, "away") == 0) {
-        return COLOUR_AWAY;
-    } else if (g_strcmp0(presence, "chat") == 0) {
-        return COLOUR_CHAT;
-    } else if (g_strcmp0(presence, "dnd") == 0) {
-        return COLOUR_DND;
-    } else if (g_strcmp0(presence, "xa") == 0) {
-        return COLOUR_XA;
-    } else {
-        return COLOUR_OFFLINE;
+    window->layout->y_pos = y - (size - 1);
+    if (window->layout->y_pos < 0) {
+        window->layout->y_pos = 0;
     }
 }
 
@@ -181,16 +577,16 @@ win_show_occupant(ProfWin *window, Occupant *occupant)
 {
     const char *presence_str = string_from_resource_presence(occupant->presence);
 
-    int presence_colour = win_presence_colour(presence_str);
+    theme_item_t presence_colour = theme_main_presence_attrs(presence_str);
 
-    win_save_print(window, '-', NULL, NO_EOL, presence_colour, "", occupant->nick);
-    win_save_vprint(window, '-', NULL, NO_DATE | NO_EOL, presence_colour, "", " is %s", presence_str);
+    win_print(window, '-', 0, NULL, NO_EOL, presence_colour, "", occupant->nick);
+    win_vprint(window, '-', 0, NULL, NO_DATE | NO_EOL, presence_colour, "", " is %s", presence_str);
 
     if (occupant->status) {
-        win_save_vprint(window, '-', NULL, NO_DATE | NO_EOL, presence_colour, "", ", \"%s\"", occupant->status);
+        win_vprint(window, '-', 0, NULL, NO_DATE | NO_EOL, presence_colour, "", ", \"%s\"", occupant->status);
     }
 
-    win_save_print(window, '-', NULL, NO_DATE, presence_colour, "", "");
+    win_print(window, '-', 0, NULL, NO_DATE, presence_colour, "", "");
 }
 
 void
@@ -202,17 +598,17 @@ win_show_contact(ProfWin *window, PContact contact)
     const char *status = p_contact_status(contact);
     GDateTime *last_activity = p_contact_last_activity(contact);
 
-    int presence_colour = win_presence_colour(presence);
+    theme_item_t presence_colour = theme_main_presence_attrs(presence);
 
-    if (name != NULL) {
-        win_save_print(window, '-', NULL, NO_EOL, presence_colour, "", name);
+    if (name) {
+        win_print(window, '-', 0, NULL, NO_EOL, presence_colour, "", name);
     } else {
-        win_save_print(window, '-', NULL, NO_EOL, presence_colour, "", barejid);
+        win_print(window, '-', 0, NULL, NO_EOL, presence_colour, "", barejid);
     }
 
-    win_save_vprint(window, '-', NULL, NO_DATE | NO_EOL, presence_colour, "", " is %s", presence);
+    win_vprint(window, '-', 0, NULL, NO_DATE | NO_EOL, presence_colour, "", " is %s", presence);
 
-    if (last_activity != NULL) {
+    if (last_activity) {
         GDateTime *now = g_date_time_new_now_local();
         GTimeSpan span = g_date_time_difference(now, last_activity);
 
@@ -223,18 +619,18 @@ win_show_contact(ProfWin *window, PContact contact)
         int seconds = span / G_TIME_SPAN_SECOND;
 
         if (hours > 0) {
-          win_save_vprint(window, '-', NULL, NO_DATE | NO_EOL, presence_colour, "", ", idle %dh%dm%ds", hours, minutes, seconds);
+          win_vprint(window, '-', 0, NULL, NO_DATE | NO_EOL, presence_colour, "", ", idle %dh%dm%ds", hours, minutes, seconds);
         }
         else {
-          win_save_vprint(window, '-', NULL, NO_DATE | NO_EOL, presence_colour, "", ", idle %dm%ds", minutes, seconds);
+          win_vprint(window, '-', 0, NULL, NO_DATE | NO_EOL, presence_colour, "", ", idle %dm%ds", minutes, seconds);
         }
     }
 
-    if (status != NULL) {
-        win_save_vprint(window, '-', NULL, NO_DATE | NO_EOL, presence_colour, "", ", \"%s\"", p_contact_status(contact));
+    if (status) {
+        win_vprint(window, '-', 0, NULL, NO_DATE | NO_EOL, presence_colour, "", ", \"%s\"", p_contact_status(contact));
     }
 
-    win_save_print(window, '-', NULL, NO_DATE, presence_colour, "", "");
+    win_print(window, '-', 0, NULL, NO_DATE, presence_colour, "", "");
 }
 
 void
@@ -244,23 +640,23 @@ win_show_occupant_info(ProfWin *window, const char * const room, Occupant *occup
     const char *occupant_affiliation = muc_occupant_affiliation_str(occupant);
     const char *occupant_role = muc_occupant_role_str(occupant);
 
-    int presence_colour = win_presence_colour(presence_str);
+    theme_item_t presence_colour = theme_main_presence_attrs(presence_str);
 
-    win_save_print(window, '!', NULL, NO_EOL, presence_colour, "", occupant->nick);
-    win_save_vprint(window, '!', NULL, NO_DATE | NO_EOL, presence_colour, "", " is %s", presence_str);
+    win_print(window, '!', 0, NULL, NO_EOL, presence_colour, "", occupant->nick);
+    win_vprint(window, '!', 0, NULL, NO_DATE | NO_EOL, presence_colour, "", " is %s", presence_str);
 
     if (occupant->status) {
-        win_save_vprint(window, '!', NULL, NO_DATE | NO_EOL, presence_colour, "", ", \"%s\"", occupant->status);
+        win_vprint(window, '!', 0, NULL, NO_DATE | NO_EOL, presence_colour, "", ", \"%s\"", occupant->status);
     }
 
-    win_save_newline(window);
+    win_newline(window);
 
     if (occupant->jid) {
-        win_save_vprint(window, '!', NULL, 0, 0, "", "  Jid: %s", occupant->jid);
+        win_vprint(window, '!', 0, NULL, 0, 0, "", "  Jid: %s", occupant->jid);
     }
 
-    win_save_vprint(window, '!', NULL, 0, 0, "", "  Affiliation: %s", occupant_affiliation);
-    win_save_vprint(window, '!', NULL, 0, 0, "", "  Role: %s", occupant_role);
+    win_vprint(window, '!', 0, NULL, 0, 0, "", "  Affiliation: %s", occupant_affiliation);
+    win_vprint(window, '!', 0, NULL, 0, 0, "", "  Role: %s", occupant_role);
 
     Jid *jidp = jid_create_from_bare_and_resource(room, occupant->nick);
     Capabilities *caps = caps_lookup(jidp->fulljid);
@@ -268,47 +664,47 @@ win_show_occupant_info(ProfWin *window, const char * const room, Occupant *occup
 
     if (caps) {
         // show identity
-        if ((caps->category != NULL) || (caps->type != NULL) || (caps->name != NULL)) {
-            win_save_print(window, '!', NULL, NO_EOL, 0, "", "  Identity: ");
-            if (caps->name != NULL) {
-                win_save_print(window, '!', NULL, NO_DATE | NO_EOL, 0, "", caps->name);
-                if ((caps->category != NULL) || (caps->type != NULL)) {
-                    win_save_print(window, '-', NULL, NO_DATE | NO_EOL, 0, "", " ");
+        if (caps->category || caps->type || caps->name) {
+            win_print(window, '!', 0, NULL, NO_EOL, 0, "", "  Identity: ");
+            if (caps->name) {
+                win_print(window, '!', 0, NULL, NO_DATE | NO_EOL, 0, "", caps->name);
+                if (caps->category || caps->type) {
+                    win_print(window, '-', 0, NULL, NO_DATE | NO_EOL, 0, "", " ");
                 }
             }
-            if (caps->type != NULL) {
-                win_save_print(window, '!', NULL, NO_DATE | NO_EOL, 0, "", caps->type);
-                if (caps->category != NULL) {
-                    win_save_print(window, '!', NULL, NO_DATE | NO_EOL, 0, "", " ");
+            if (caps->type) {
+                win_print(window, '!', 0, NULL, NO_DATE | NO_EOL, 0, "", caps->type);
+                if (caps->category) {
+                    win_print(window, '!', 0, NULL, NO_DATE | NO_EOL, 0, "", " ");
                 }
             }
-            if (caps->category != NULL) {
-                win_save_print(window, '!', NULL, NO_DATE | NO_EOL, 0, "", caps->category);
+            if (caps->category) {
+                win_print(window, '!', 0, NULL, NO_DATE | NO_EOL, 0, "", caps->category);
             }
-            win_save_newline(window);
+            win_newline(window);
         }
-        if (caps->software != NULL) {
-            win_save_vprint(window, '!', NULL, NO_EOL, 0, "", "  Software: %s", caps->software);
+        if (caps->software) {
+            win_vprint(window, '!', 0, NULL, NO_EOL, 0, "", "  Software: %s", caps->software);
         }
-        if (caps->software_version != NULL) {
-            win_save_vprint(window, '!', NULL, NO_DATE | NO_EOL, 0, "", ", %s", caps->software_version);
+        if (caps->software_version) {
+            win_vprint(window, '!', 0, NULL, NO_DATE | NO_EOL, 0, "", ", %s", caps->software_version);
         }
-        if ((caps->software != NULL) || (caps->software_version != NULL)) {
-            win_save_newline(window);
+        if (caps->software || caps->software_version) {
+            win_newline(window);
         }
-        if (caps->os != NULL) {
-            win_save_vprint(window, '!', NULL, NO_EOL, 0, "", "  OS: %s", caps->os);
+        if (caps->os) {
+            win_vprint(window, '!', 0, NULL, NO_EOL, 0, "", "  OS: %s", caps->os);
         }
-        if (caps->os_version != NULL) {
-            win_save_vprint(window, '!', NULL, NO_DATE | NO_EOL, 0, "", ", %s", caps->os_version);
+        if (caps->os_version) {
+            win_vprint(window, '!', 0, NULL, NO_DATE | NO_EOL, 0, "", ", %s", caps->os_version);
         }
-        if ((caps->os != NULL) || (caps->os_version != NULL)) {
-            win_save_newline(window);
+        if (caps->os || caps->os_version) {
+            win_newline(window);
         }
         caps_destroy(caps);
     }
 
-    win_save_print(window, '-', NULL, 0, 0, "", "");
+    win_print(window, '-', 0, NULL, 0, 0, "", "");
 }
 
 void
@@ -318,24 +714,22 @@ win_show_info(ProfWin *window, PContact contact)
     const char *name = p_contact_name(contact);
     const char *presence = p_contact_presence(contact);
     const char *sub = p_contact_subscription(contact);
-    GList *resources = p_contact_get_available_resources(contact);
-    GList *ordered_resources = NULL;
     GDateTime *last_activity = p_contact_last_activity(contact);
 
-    int presence_colour = win_presence_colour(presence);
+    theme_item_t presence_colour = theme_main_presence_attrs(presence);
 
-    win_save_print(window, '-', NULL, 0, 0, "", "");
-    win_save_print(window, '-', NULL, NO_EOL, presence_colour, "", barejid);
-    if (name != NULL) {
-        win_save_vprint(window, '-', NULL, NO_DATE | NO_EOL, presence_colour, "", " (%s)", name);
+    win_print(window, '-', 0, NULL, 0, 0, "", "");
+    win_print(window, '-', 0, NULL, NO_EOL, presence_colour, "", barejid);
+    if (name) {
+        win_vprint(window, '-', 0, NULL, NO_DATE | NO_EOL, presence_colour, "", " (%s)", name);
     }
-    win_save_print(window, '-', NULL, NO_DATE, 0, "", ":");
+    win_print(window, '-', 0, NULL, NO_DATE, 0, "", ":");
 
-    if (sub != NULL) {
-        win_save_vprint(window, '-', NULL, 0, 0, "", "Subscription: %s", sub);
+    if (sub) {
+        win_vprint(window, '-', 0, NULL, 0, 0, "", "Subscription: %s", sub);
     }
 
-    if (last_activity != NULL) {
+    if (last_activity) {
         GDateTime *now = g_date_time_new_now_local();
         GTimeSpan span = g_date_time_difference(now, last_activity);
 
@@ -346,36 +740,41 @@ win_show_info(ProfWin *window, PContact contact)
         int seconds = span / G_TIME_SPAN_SECOND;
 
         if (hours > 0) {
-          win_save_vprint(window, '-', NULL, 0, 0, "", "Last activity: %dh%dm%ds", hours, minutes, seconds);
+          win_vprint(window, '-', 0, NULL, 0, 0, "", "Last activity: %dh%dm%ds", hours, minutes, seconds);
         }
         else {
-          win_save_vprint(window, '-', NULL, 0, 0, "", "Last activity: %dm%ds", minutes, seconds);
+          win_vprint(window, '-', 0, NULL, 0, 0, "", "Last activity: %dm%ds", minutes, seconds);
         }
 
         g_date_time_unref(now);
     }
 
-    if (resources != NULL) {
-        win_save_print(window, '-', NULL, 0, 0, "", "Resources:");
+    GList *resources = p_contact_get_available_resources(contact);
+    GList *ordered_resources = NULL;
+    if (resources) {
+        win_print(window, '-', 0, NULL, 0, 0, "", "Resources:");
 
-        // sort in order of availabiltiy
-        while (resources != NULL) {
-            Resource *resource = resources->data;
+        // sort in order of availability
+        GList *curr = resources;
+        while (curr) {
+            Resource *resource = curr->data;
             ordered_resources = g_list_insert_sorted(ordered_resources,
                 resource, (GCompareFunc)resource_compare_availability);
-            resources = g_list_next(resources);
+            curr = g_list_next(curr);
         }
     }
+    g_list_free(resources);
 
-    while (ordered_resources != NULL) {
-        Resource *resource = ordered_resources->data;
+    GList *curr = ordered_resources;
+    while (curr) {
+        Resource *resource = curr->data;
         const char *resource_presence = string_from_resource_presence(resource->presence);
-        int presence_colour = win_presence_colour(resource_presence);
-        win_save_vprint(window, '-', NULL, NO_EOL, presence_colour, "", "  %s (%d), %s", resource->name, resource->priority, resource_presence);
-        if (resource->status != NULL) {
-            win_save_vprint(window, '-', NULL, NO_DATE | NO_EOL, presence_colour, "", ", \"%s\"", resource->status);
+        theme_item_t presence_colour = theme_main_presence_attrs(resource_presence);
+        win_vprint(window, '-', 0, NULL, NO_EOL, presence_colour, "", "  %s (%d), %s", resource->name, resource->priority, resource_presence);
+        if (resource->status) {
+            win_vprint(window, '-', 0, NULL, NO_DATE | NO_EOL, presence_colour, "", ", \"%s\"", resource->status);
         }
-        win_save_newline(window);
+        win_newline(window);
 
         Jid *jidp = jid_create_from_bare_and_resource(barejid, resource->name);
         Capabilities *caps = caps_lookup(jidp->fulljid);
@@ -383,48 +782,49 @@ win_show_info(ProfWin *window, PContact contact)
 
         if (caps) {
             // show identity
-            if ((caps->category != NULL) || (caps->type != NULL) || (caps->name != NULL)) {
-                win_save_print(window, '-', NULL, NO_EOL, 0, "", "    Identity: ");
-                if (caps->name != NULL) {
-                    win_save_print(window, '-', NULL, NO_DATE | NO_EOL, 0, "", caps->name);
-                    if ((caps->category != NULL) || (caps->type != NULL)) {
-                        win_save_print(window, '-', NULL, NO_DATE | NO_EOL, 0, "", " ");
+            if (caps->category || caps->type || caps->name) {
+                win_print(window, '-', 0, NULL, NO_EOL, 0, "", "    Identity: ");
+                if (caps->name) {
+                    win_print(window, '-', 0, NULL, NO_DATE | NO_EOL, 0, "", caps->name);
+                    if (caps->category || caps->type) {
+                        win_print(window, '-', 0, NULL, NO_DATE | NO_EOL, 0, "", " ");
                     }
                 }
-                if (caps->type != NULL) {
-                    win_save_print(window, '-', NULL, NO_DATE | NO_EOL, 0, "", caps->type);
-                    if (caps->category != NULL) {
-                        win_save_print(window, '-', NULL, NO_DATE | NO_EOL, 0, "", " ");
+                if (caps->type) {
+                    win_print(window, '-', 0, NULL, NO_DATE | NO_EOL, 0, "", caps->type);
+                    if (caps->category) {
+                        win_print(window, '-', 0, NULL, NO_DATE | NO_EOL, 0, "", " ");
                     }
                 }
-                if (caps->category != NULL) {
-                    win_save_print(window, '-', NULL, NO_DATE | NO_EOL, 0, "", caps->category);
+                if (caps->category) {
+                    win_print(window, '-', 0, NULL, NO_DATE | NO_EOL, 0, "", caps->category);
                 }
-                win_save_newline(window);
+                win_newline(window);
             }
-            if (caps->software != NULL) {
-                win_save_vprint(window, '-', NULL, NO_EOL, 0, "", "    Software: %s", caps->software);
+            if (caps->software) {
+                win_vprint(window, '-', 0, NULL, NO_EOL, 0, "", "    Software: %s", caps->software);
             }
-            if (caps->software_version != NULL) {
-                win_save_vprint(window, '-', NULL, NO_DATE | NO_EOL, 0, "", ", %s", caps->software_version);
+            if (caps->software_version) {
+                win_vprint(window, '-', 0, NULL, NO_DATE | NO_EOL, 0, "", ", %s", caps->software_version);
             }
-            if ((caps->software != NULL) || (caps->software_version != NULL)) {
-                win_save_newline(window);
+            if (caps->software || caps->software_version) {
+                win_newline(window);
             }
-            if (caps->os != NULL) {
-                win_save_vprint(window, '-', NULL, NO_EOL, 0, "", "    OS: %s", caps->os);
+            if (caps->os) {
+                win_vprint(window, '-', 0, NULL, NO_EOL, 0, "", "    OS: %s", caps->os);
             }
-            if (caps->os_version != NULL) {
-                win_save_vprint(window, '-', NULL, NO_DATE | NO_EOL, 0, "", ", %s", caps->os_version);
+            if (caps->os_version) {
+                win_vprint(window, '-', 0, NULL, NO_DATE | NO_EOL, 0, "", ", %s", caps->os_version);
             }
-            if ((caps->os != NULL) || (caps->os_version != NULL)) {
-                win_save_newline(window);
+            if (caps->os || caps->os_version) {
+                win_newline(window);
             }
             caps_destroy(caps);
         }
 
-        ordered_resources = g_list_next(ordered_resources);
+        curr = g_list_next(curr);
     }
+    g_list_free(ordered_resources);
 }
 
 void
@@ -433,25 +833,25 @@ win_show_status_string(ProfWin *window, const char * const from,
     GDateTime *last_activity, const char * const pre,
     const char * const default_show)
 {
-    int presence_colour;
+    theme_item_t presence_colour;
 
-    if (show != NULL) {
-        presence_colour = win_presence_colour(show);
+    if (show) {
+        presence_colour = theme_main_presence_attrs(show);
     } else if (strcmp(default_show, "online") == 0) {
-        presence_colour = COLOUR_ONLINE;
+        presence_colour = THEME_ONLINE;
     } else {
-        presence_colour = COLOUR_OFFLINE;
+        presence_colour = THEME_OFFLINE;
     }
 
 
-    win_save_vprint(window, '-', NULL, NO_EOL, presence_colour, "", "%s %s", pre, from);
+    win_vprint(window, '-', 0, NULL, NO_EOL, presence_colour, "", "%s %s", pre, from);
 
-    if (show != NULL)
-        win_save_vprint(window, '-', NULL, NO_DATE | NO_EOL, presence_colour, "", " is %s", show);
+    if (show)
+        win_vprint(window, '-', 0, NULL, NO_DATE | NO_EOL, presence_colour, "", " is %s", show);
     else
-        win_save_vprint(window, '-', NULL, NO_DATE | NO_EOL, presence_colour, "", " is %s", default_show);
+        win_vprint(window, '-', 0, NULL, NO_DATE | NO_EOL, presence_colour, "", " is %s", default_show);
 
-    if (last_activity != NULL) {
+    if (last_activity) {
         GDateTime *now = g_date_time_new_now_local();
         GTimeSpan span = g_date_time_difference(now, last_activity);
         g_date_time_unref(now);
@@ -463,29 +863,38 @@ win_show_status_string(ProfWin *window, const char * const from,
         int seconds = span / G_TIME_SPAN_SECOND;
 
         if (hours > 0) {
-          win_save_vprint(window, '-', NULL, NO_DATE | NO_EOL, presence_colour, "", ", idle %dh%dm%ds", hours, minutes, seconds);
+          win_vprint(window, '-', 0, NULL, NO_DATE | NO_EOL, presence_colour, "", ", idle %dh%dm%ds", hours, minutes, seconds);
         }
         else {
-          win_save_vprint(window, '-', NULL, NO_DATE | NO_EOL, presence_colour, "", ", idle %dm%ds", minutes, seconds);
+          win_vprint(window, '-', 0, NULL, NO_DATE | NO_EOL, presence_colour, "", ", idle %dm%ds", minutes, seconds);
         }
     }
 
-    if (status != NULL)
-        win_save_vprint(window, '-', NULL, NO_DATE | NO_EOL, presence_colour, "", ", \"%s\"", status);
+    if (status)
+        win_vprint(window, '-', 0, NULL, NO_DATE | NO_EOL, presence_colour, "", ", \"%s\"", status);
 
-    win_save_print(window, '-', NULL, NO_DATE, presence_colour, "", "");
+    win_print(window, '-', 0, NULL, NO_DATE, presence_colour, "", "");
 
 }
 
 void
-win_print_incoming_message(ProfWin *window, GTimeVal *tv_stamp,
-    const char * const from, const char * const message)
+win_print_incoming_message(ProfWin *window, GDateTime *timestamp,
+    const char * const from, const char * const message, prof_enc_t enc_mode)
 {
+    char enc_char = '-';
+
     switch (window->type)
     {
         case WIN_CHAT:
+            if (enc_mode == PROF_MSG_OTR) {
+                enc_char = prefs_get_otr_char();
+            } else if (enc_mode == PROF_MSG_PGP) {
+                enc_char = prefs_get_pgp_char();
+            }
+            win_print(window, enc_char, 0, timestamp, NO_ME, THEME_TEXT_THEM, from, message);
+            break;
         case WIN_PRIVATE:
-            win_save_print(window, '-', tv_stamp, NO_ME, 0, from, message);
+            win_print(window, '-', 0, timestamp, NO_ME, THEME_TEXT_THEM, from, message);
             break;
         default:
             assert(FALSE);
@@ -494,112 +903,344 @@ win_print_incoming_message(ProfWin *window, GTimeVal *tv_stamp,
 }
 
 void
-win_save_vprint(ProfWin *window, const char show_char, GTimeVal *tstamp,
-    int flags, int attrs, const char * const from, const char * const message, ...)
+win_vprint(ProfWin *window, const char show_char, int pad_indent, GDateTime *timestamp,
+    int flags, theme_item_t theme_item, const char * const from, const char * const message, ...)
 {
     va_list arg;
     va_start(arg, message);
     GString *fmt_msg = g_string_new(NULL);
     g_string_vprintf(fmt_msg, message, arg);
-    win_save_print(window, show_char, tstamp, flags, attrs, from, fmt_msg->str);
+    win_print(window, show_char, pad_indent, timestamp, flags, theme_item, from, fmt_msg->str);
     g_string_free(fmt_msg, TRUE);
 }
 
 void
-win_save_print(ProfWin *window, const char show_char, GTimeVal *tstamp,
-    int flags, int attrs, const char * const from, const char * const message)
+win_print(ProfWin *window, const char show_char, int pad_indent, GDateTime *timestamp,
+    int flags, theme_item_t theme_item, const char * const from, const char * const message)
 {
-    gchar *date_fmt;
+    if (timestamp == NULL) {
+        timestamp = g_date_time_new_now_local();
+    } else {
+        g_date_time_ref(timestamp);
+    }
+
+    buffer_push(window->layout->buffer, show_char, pad_indent, timestamp, flags, theme_item, from, message, NULL);
+    _win_print(window, show_char, pad_indent, timestamp, flags, theme_item, from, message, NULL);
+    // TODO: cross-reference.. this should be replaced by a real event-based system
+    ui_input_nonblocking(TRUE);
+    g_date_time_unref(timestamp);
+}
+
+void
+win_print_with_receipt(ProfWin *window, const char show_char, int pad_indent, GTimeVal *tstamp,
+    int flags, theme_item_t theme_item, const char * const from, const char * const message, char *id)
+{
     GDateTime *time;
 
     if (tstamp == NULL) {
         time = g_date_time_new_now_local();
-        date_fmt = g_date_time_format(time, "%H:%M:%S");
     } else {
         time = g_date_time_new_from_timeval_utc(tstamp);
-        date_fmt = g_date_time_format(time, "%H:%M:%S");
     }
 
+    DeliveryReceipt *receipt = malloc(sizeof(struct delivery_receipt_t));
+    receipt->id = strdup(id);
+    receipt->received = FALSE;
+
+    buffer_push(window->layout->buffer, show_char, pad_indent, time, flags, theme_item, from, message, receipt);
+    _win_print(window, show_char, pad_indent, time, flags, theme_item, from, message, receipt);
+    // TODO: cross-reference.. this should be replaced by a real event-based system
+    ui_input_nonblocking(TRUE);
     g_date_time_unref(time);
-    buffer_push(window->buffer, show_char, date_fmt, flags, attrs, from, message);
-    _win_print(window, show_char, date_fmt, flags, attrs, from, message);
-    g_free(date_fmt);
 }
 
 void
-win_save_println(ProfWin *window, const char * const message)
+win_mark_received(ProfWin *window, const char * const id)
 {
-    win_save_print(window, '-', NULL, 0, 0, "", message);
+    gboolean received = buffer_mark_received(window->layout->buffer, id);
+    if (received) {
+        win_redraw(window);
+    }
 }
 
 void
-win_save_newline(ProfWin *window)
+win_println(ProfWin *window, int pad, const char * const message)
 {
-    win_save_print(window, '-', NULL, NO_DATE, 0, "", "");
+    win_print(window, '-', pad, NULL, 0, 0, "", message);
+}
+
+void
+win_newline(ProfWin *window)
+{
+    win_print(window, '-', 0, NULL, NO_DATE, 0, "", "");
 }
 
 static void
-_win_print(ProfWin *window, const char show_char, const char * const date_fmt,
-    int flags, int attrs, const char * const from, const char * const message)
+_win_print(ProfWin *window, const char show_char, int pad_indent, GDateTime *time,
+    int flags, theme_item_t theme_item, const char * const from, const char * const message, DeliveryReceipt *receipt)
 {
     // flags : 1st bit =  0/1 - me/not me
     //         2nd bit =  0/1 - date/no date
     //         3rd bit =  0/1 - eol/no eol
     //         4th bit =  0/1 - color from/no color from
-    int unattr_me = 0;
+    //         5th bit =  0/1 - color date/no date
+    gboolean me_message = FALSE;
     int offset = 0;
-    int colour = COLOUR_ME;
+    int colour = theme_attrs(THEME_ME);
+    size_t indent = 0;
+
+    gchar *date_fmt = NULL;
+    char *time_pref = prefs_get_string(PREF_TIME);
+    date_fmt = g_date_time_format(time, time_pref);
+    prefs_free_string(time_pref);
+    assert(date_fmt != NULL);
+
+    if(strlen(date_fmt) != 0){
+        indent = 3 + strlen(date_fmt);
+    }
 
     if ((flags & NO_DATE) == 0) {
-        wattron(window->win, COLOUR_TIME);
-        wprintw(window->win, "%s %c ", date_fmt, show_char);
-        wattroff(window->win, COLOUR_TIME);
+        if (date_fmt && strlen(date_fmt)) {
+            if ((flags & NO_COLOUR_DATE) == 0) {
+                wattron(window->layout->win, theme_attrs(THEME_TIME));
+            }
+            wprintw(window->layout->win, "%s %c ", date_fmt, show_char);
+            if ((flags & NO_COLOUR_DATE) == 0) {
+                wattroff(window->layout->win, theme_attrs(THEME_TIME));
+            }
+        }
     }
 
     if (strlen(from) > 0) {
         if (flags & NO_ME) {
-            colour = COLOUR_THEM;
+            colour = theme_attrs(THEME_THEM);
         }
 
         if (flags & NO_COLOUR_FROM) {
             colour = 0;
         }
 
-        wattron(window->win, colour);
+        if (receipt && !receipt->received) {
+            colour = theme_attrs(THEME_RECEIPT_SENT);
+        }
+
+        wattron(window->layout->win, colour);
         if (strncmp(message, "/me ", 4) == 0) {
-            wprintw(window->win, "*%s ", from);
+            wprintw(window->layout->win, "*%s ", from);
             offset = 4;
-            unattr_me = 1;
+            me_message = TRUE;
         } else {
-            wprintw(window->win, "%s: ", from);
-            wattroff(window->win, colour);
+            wprintw(window->layout->win, "%s: ", from);
+            wattroff(window->layout->win, colour);
         }
     }
 
-    wattron(window->win, attrs);
+    if (!me_message) {
+        if (receipt && !receipt->received) {
+            wattron(window->layout->win, theme_attrs(THEME_RECEIPT_SENT));
+        } else {
+            wattron(window->layout->win, theme_attrs(theme_item));
+        }
+    }
 
-    if (flags & NO_EOL) {
-        wprintw(window->win, "%s", message+offset);
+    if (prefs_get_boolean(PREF_WRAP)) {
+        _win_print_wrapped(window->layout->win, message+offset, indent, pad_indent);
     } else {
-        wprintw(window->win, "%s\n", message+offset);
+        wprintw(window->layout->win, "%s", message+offset);
     }
 
-    wattroff(window->win, attrs);
-
-    if (unattr_me) {
-        wattroff(window->win, colour);
+    if ((flags & NO_EOL) == 0) {
+        int curx = getcurx(window->layout->win);
+        if (curx != 0) {
+            wprintw(window->layout->win, "\n");
+        }
     }
+
+    if (me_message) {
+        wattroff(window->layout->win, colour);
+    } else {
+        if (receipt && !receipt->received) {
+            wattroff(window->layout->win, theme_attrs(THEME_RECEIPT_SENT));
+        } else {
+            wattroff(window->layout->win, theme_attrs(theme_item));
+        }
+    }
+
+    g_free(date_fmt);
+}
+
+static void
+_win_indent(WINDOW *win, int size)
+{
+    int i = 0;
+    for (i = 0; i < size; i++) {
+        waddch(win, ' ');
+    }
+}
+
+static void
+_win_print_wrapped(WINDOW *win, const char * const message, size_t indent, int pad_indent)
+{
+    int starty = getcury(win);
+    int wordi = 0;
+    char *word = malloc(strlen(message) + 1);
+
+    gchar *curr_ch = g_utf8_offset_to_pointer(message, 0);
+
+    while (*curr_ch != '\0') {
+
+        // handle space
+        if (*curr_ch == ' ') {
+            waddch(win, ' ');
+            curr_ch = g_utf8_next_char(curr_ch);
+
+        // handle newline
+        } else if (*curr_ch == '\n') {
+            waddch(win, '\n');
+            _win_indent(win, indent + pad_indent);
+            curr_ch = g_utf8_next_char(curr_ch);
+
+        // handle word
+        } else {
+            wordi = 0;
+            int wordlen = 0;
+            while (*curr_ch != ' ' && *curr_ch != '\n' && *curr_ch != '\0') {
+                size_t ch_len = mbrlen(curr_ch, 4, NULL);
+                int offset = 0;
+                while (offset < ch_len) {
+                    word[wordi++] = curr_ch[offset++];
+                }
+                curr_ch = g_utf8_next_char(curr_ch);
+            }
+            word[wordi] = '\0';
+            wordlen = utf8_display_len(word);
+
+            int curx = getcurx(win);
+            int cury = getcury(win);
+            int maxx = getmaxx(win);
+
+            // wrap required
+            if (curx + wordlen > maxx) {
+                int linelen = maxx - (indent + pad_indent);
+
+                // word larger than line
+                if (wordlen > linelen) {
+                    gchar *word_ch = g_utf8_offset_to_pointer(word, 0);
+                    while(*word_ch != '\0') {
+                        curx = getcurx(win);
+                        cury = getcury(win);
+                        gboolean firstline = cury == starty;
+
+                        if (firstline && curx < indent) {
+                            _win_indent(win, indent);
+                        }
+                        if (!firstline && curx < (indent + pad_indent)) {
+                            _win_indent(win, indent + pad_indent);
+                        }
+
+                        gchar copy[wordi+1];
+                        g_utf8_strncpy(copy, word_ch, 1);
+                        waddstr(win, copy);
+
+                        word_ch = g_utf8_next_char(word_ch);
+                    }
+
+                // newline and print word
+                } else {
+                    waddch(win, '\n');
+                    curx = getcurx(win);
+                    cury = getcury(win);
+                    gboolean firstline = cury == starty;
+
+                    if (firstline && curx < indent) {
+                        _win_indent(win, indent);
+                    }
+                    if (!firstline && curx < (indent + pad_indent)) {
+                        _win_indent(win, indent + pad_indent);
+                    }
+                    waddstr(win, word);
+                }
+
+            // no wrap required
+            } else {
+                curx = getcurx(win);
+                cury = getcury(win);
+                gboolean firstline = cury == starty;
+
+                if (firstline && curx < indent) {
+                    _win_indent(win, indent);
+                }
+                if (!firstline && curx < (indent + pad_indent)) {
+                    _win_indent(win, indent + pad_indent);
+                }
+                waddstr(win, word);
+            }
+        }
+
+        // consume first space of next line
+        int curx = getcurx(win);
+        int cury = getcury(win);
+        gboolean firstline = (cury == starty);
+
+        if (!firstline && curx == 0 && *curr_ch == ' ') {
+            curr_ch = g_utf8_next_char(curr_ch);
+        }
+    }
+
+    free(word);
 }
 
 void
 win_redraw(ProfWin *window)
 {
     int i, size;
-    werase(window->win);
-    size = buffer_size(window->buffer);
+    werase(window->layout->win);
+    size = buffer_size(window->layout->buffer);
 
     for (i = 0; i < size; i++) {
-        ProfBuffEntry *e = buffer_yield_entry(window->buffer, i);
-        _win_print(window, e->show_char, e->date_fmt, e->flags, e->attrs, e->from, e->message);
+        ProfBuffEntry *e = buffer_yield_entry(window->layout->buffer, i);
+        _win_print(window, e->show_char, e->pad_indent, e->time, e->flags, e->theme_item, e->from, e->message, e->receipt);
     }
+}
+
+gboolean
+win_has_active_subwin(ProfWin *window)
+{
+    if (window->layout->type == LAYOUT_SPLIT) {
+        ProfLayoutSplit *layout = (ProfLayoutSplit*)window->layout;
+        return (layout->subwin != NULL);
+    } else {
+        return FALSE;
+    }
+}
+
+int
+win_unread(ProfWin *window)
+{
+    if (window->type == WIN_CHAT) {
+        ProfChatWin *chatwin = (ProfChatWin*) window;
+        assert(chatwin->memcheck == PROFCHATWIN_MEMCHECK);
+        return chatwin->unread;
+    } else if (window->type == WIN_MUC) {
+        ProfMucWin *mucwin = (ProfMucWin*) window;
+        assert(mucwin->memcheck == PROFMUCWIN_MEMCHECK);
+        return mucwin->unread;
+    } else if (window->type == WIN_PRIVATE) {
+        ProfPrivateWin *privatewin = (ProfPrivateWin*) window;
+        assert(privatewin->memcheck == PROFPRIVATEWIN_MEMCHECK);
+        return privatewin->unread;
+    } else {
+        return 0;
+    }
+}
+
+void
+win_printline_nowrap(WINDOW *win, char *msg)
+{
+    int maxx = getmaxx(win);
+    int cury = getcury(win);
+
+    waddnstr(win, msg, maxx);
+
+    wmove(win, cury+1, 0);
 }

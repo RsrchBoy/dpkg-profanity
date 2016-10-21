@@ -1,7 +1,7 @@
 /*
  * account.h
  *
- * Copyright (C) 2012 - 2014 James Booth <boothj5@gmail.com>
+ * Copyright (C) 2012 - 2015 James Booth <boothj5@gmail.com>
  *
  * This file is part of Profanity.
  *
@@ -41,6 +41,7 @@ typedef struct prof_account_t {
     gchar *name;
     gchar *jid;
     gchar *password;
+    gchar *eval_password;
     gchar *resource;
     gchar *server;
     int port;
@@ -58,19 +59,19 @@ typedef struct prof_account_t {
     GList *otr_manual;
     GList *otr_opportunistic;
     GList *otr_always;
+    gchar *pgp_keyid;
 } ProfAccount;
 
 ProfAccount* account_new(const gchar * const name, const gchar * const jid,
-    const gchar * const passord, gboolean enabled, const gchar * const server,
+    const gchar * const passord, const gchar * eval_password, gboolean enabled, const gchar * const server,
     int port, const gchar * const resource, const gchar * const last_presence,
     const gchar * const login_presence, int priority_online, int priority_chat,
     int priority_away, int priority_xa, int priority_dnd,
     const gchar * const muc_service, const gchar * const muc_nick,
     const gchar * const otr_policy, GList *otr_manual, GList *otr_opportunistic,
-    GList *otr_always);
-
+    GList *otr_always, const gchar * const pgp_keyid);
 char* account_create_full_jid(ProfAccount *account);
-
+gboolean account_eval_password(ProfAccount *account);
 void account_free(ProfAccount *account);
 
 #endif

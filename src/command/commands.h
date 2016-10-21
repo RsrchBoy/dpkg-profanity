@@ -1,7 +1,7 @@
 /*
  * commands.h
  *
- * Copyright (C) 2012 - 2014 James Booth <boothj5@gmail.com>
+ * Copyright (C) 2012 - 2015 James Booth <boothj5@gmail.com>
  *
  * This file is part of Profanity.
  *
@@ -35,11 +35,15 @@
 #ifndef COMMANDS_H
 #define COMMANDS_H
 
+#include "ui/win_types.h"
+
 // Command help strings
 typedef struct cmd_help_t {
-    const gchar *usage;
-    const gchar *short_help;
-    const gchar *long_help[50];
+    const gchar *tags[20];
+    const gchar *synopsis[50];
+    const gchar *desc;
+    const gchar *args[50][2];
+    const gchar *examples[10];
 } CommandHelp;
 
 /*
@@ -54,85 +58,96 @@ typedef struct cmd_help_t {
  */
 typedef struct cmd_t {
     gchar *cmd;
-    gboolean (*func)(gchar **args, struct cmd_help_t help);
+    gboolean (*func)(ProfWin *window, const char * const command, gchar **args);
     gchar** (*parser)(const char * const inp, int min, int max, gboolean *result);
     int min_args;
     int max_args;
-    void (**setting_func)(void);
+    void (*setting_func)(void);
     CommandHelp help;
 } Command;
 
-gboolean cmd_about(gchar **args, struct cmd_help_t help);
-gboolean cmd_account(gchar **args, struct cmd_help_t help);
-gboolean cmd_autoaway(gchar **args, struct cmd_help_t help);
-gboolean cmd_autoconnect(gchar **args, struct cmd_help_t help);
-gboolean cmd_autoping(gchar **args, struct cmd_help_t help);
-gboolean cmd_away(gchar **args, struct cmd_help_t help);
-gboolean cmd_beep(gchar **args, struct cmd_help_t help);
-gboolean cmd_caps(gchar **args, struct cmd_help_t help);
-gboolean cmd_chat(gchar **args, struct cmd_help_t help);
-gboolean cmd_chlog(gchar **args, struct cmd_help_t help);
-gboolean cmd_clear(gchar **args, struct cmd_help_t help);
-gboolean cmd_close(gchar **args, struct cmd_help_t help);
-gboolean cmd_connect(gchar **args, struct cmd_help_t help);
-gboolean cmd_decline(gchar **args, struct cmd_help_t help);
-gboolean cmd_disco(gchar **args, struct cmd_help_t help);
-gboolean cmd_disconnect(gchar **args, struct cmd_help_t help);
-gboolean cmd_dnd(gchar **args, struct cmd_help_t help);
-gboolean cmd_flash(gchar **args, struct cmd_help_t help);
-gboolean cmd_gone(gchar **args, struct cmd_help_t help);
-gboolean cmd_grlog(gchar **args, struct cmd_help_t help);
-gboolean cmd_group(gchar **args, struct cmd_help_t help);
-gboolean cmd_help(gchar **args, struct cmd_help_t help);
-gboolean cmd_history(gchar **args, struct cmd_help_t help);
-gboolean cmd_info(gchar **args, struct cmd_help_t help);
-gboolean cmd_intype(gchar **args, struct cmd_help_t help);
-gboolean cmd_invite(gchar **args, struct cmd_help_t help);
-gboolean cmd_invites(gchar **args, struct cmd_help_t help);
-gboolean cmd_join(gchar **args, struct cmd_help_t help);
-gboolean cmd_leave(gchar **args, struct cmd_help_t help);
-gboolean cmd_log(gchar **args, struct cmd_help_t help);
-gboolean cmd_mouse(gchar **args, struct cmd_help_t help);
-gboolean cmd_msg(gchar **args, struct cmd_help_t help);
-gboolean cmd_nick(gchar **args, struct cmd_help_t help);
-gboolean cmd_notify(gchar **args, struct cmd_help_t help);
-gboolean cmd_online(gchar **args, struct cmd_help_t help);
-gboolean cmd_otr(gchar **args, struct cmd_help_t help);
-gboolean cmd_outtype(gchar **args, struct cmd_help_t help);
-gboolean cmd_prefs(gchar **args, struct cmd_help_t help);
-gboolean cmd_priority(gchar **args, struct cmd_help_t help);
-gboolean cmd_quit(gchar **args, struct cmd_help_t help);
-gboolean cmd_reconnect(gchar **args, struct cmd_help_t help);
-gboolean cmd_room(gchar **args, struct cmd_help_t help);
-gboolean cmd_rooms(gchar **args, struct cmd_help_t help);
-gboolean cmd_bookmark(gchar **args, struct cmd_help_t help);
-gboolean cmd_roster(gchar **args, struct cmd_help_t help);
-gboolean cmd_software(gchar **args, struct cmd_help_t help);
-gboolean cmd_splash(gchar **args, struct cmd_help_t help);
-gboolean cmd_states(gchar **args, struct cmd_help_t help);
-gboolean cmd_status(gchar **args, struct cmd_help_t help);
-gboolean cmd_statuses(gchar **args, struct cmd_help_t help);
-gboolean cmd_sub(gchar **args, struct cmd_help_t help);
-gboolean cmd_theme(gchar **args, struct cmd_help_t help);
-gboolean cmd_tiny(gchar **args, struct cmd_help_t help);
-gboolean cmd_titlebar(gchar **args, struct cmd_help_t help);
-gboolean cmd_vercheck(gchar **args, struct cmd_help_t help);
-gboolean cmd_who(gchar **args, struct cmd_help_t help);
-gboolean cmd_win(gchar **args, struct cmd_help_t help);
-gboolean cmd_wins(gchar **args, struct cmd_help_t help);
-gboolean cmd_xa(gchar **args, struct cmd_help_t help);
-gboolean cmd_alias(gchar **args, struct cmd_help_t help);
-gboolean cmd_xmlconsole(gchar **args, struct cmd_help_t help);
-gboolean cmd_ping(gchar **args, struct cmd_help_t help);
-gboolean cmd_form(gchar **args, struct cmd_help_t help);
-gboolean cmd_occupants(gchar **args, struct cmd_help_t help);
-gboolean cmd_kick(gchar **args, struct cmd_help_t help);
-gboolean cmd_ban(gchar **args, struct cmd_help_t help);
-gboolean cmd_subject(gchar **args, struct cmd_help_t help);
-gboolean cmd_affiliation(gchar **args, struct cmd_help_t help);
-gboolean cmd_role(gchar **args, struct cmd_help_t help);
-gboolean cmd_privileges(gchar **args, struct cmd_help_t help);
+gboolean cmd_execute_alias(ProfWin *window, const char * const inp, gboolean *ran);
+gboolean cmd_execute_default(ProfWin *window, const char * inp);
 
-gboolean cmd_form_field(char *tag, gchar **args);
+gboolean cmd_about(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_account(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_autoaway(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_autoconnect(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_autoping(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_away(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_beep(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_caps(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_chat(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_chlog(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_clear(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_close(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_connect(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_decline(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_disco(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_disconnect(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_dnd(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_flash(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_gone(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_grlog(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_group(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_help(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_history(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_carbons(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_receipts(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_info(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_intype(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_invite(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_invites(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_join(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_leave(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_log(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_msg(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_nick(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_notify(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_online(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_otr(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_pgp(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_outtype(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_prefs(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_priority(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_quit(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_reconnect(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_room(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_rooms(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_bookmark(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_roster(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_software(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_splash(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_states(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_status(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_statuses(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_sub(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_theme(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_tiny(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_titlebar(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_vercheck(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_who(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_win(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_wins(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_xa(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_alias(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_xmlconsole(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_ping(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_form(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_occupants(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_kick(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_ban(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_subject(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_affiliation(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_role(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_privileges(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_presence(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_wrap(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_time(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_resource(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_inpblock(ProfWin *window, const char * const command, gchar **args);
+gboolean cmd_encwarn(ProfWin *window, const char * const command, gchar **args);
+
+gboolean cmd_form_field(ProfWin *window, char *tag, gchar **args);
 
 #endif

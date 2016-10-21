@@ -1,7 +1,7 @@
 /*
  * otr.h
  *
- * Copyright (C) 2012 - 2014 James Booth <boothj5@gmail.com>
+ * Copyright (C) 2012 - 2015 James Booth <boothj5@gmail.com>
  *
  * This file is part of Profanity.
  *
@@ -39,6 +39,7 @@
 #include <libotr/message.h>
 
 #include "config/accounts.h"
+#include "ui/ui.h"
 
 typedef enum {
     PROF_OTRPOLICY_MANUAL,
@@ -46,42 +47,46 @@ typedef enum {
     PROF_OTRPOLICY_ALWAYS
 } prof_otrpolicy_t;
 
-void otr_init_module(void);
-
 OtrlUserState otr_userstate(void);
 OtrlMessageAppOps* otr_messageops(void);
 GHashTable* otr_smpinitators(void);
 
-void (*otr_init)(void);
-void (*otr_shutdown)(void);
-char* (*otr_libotr_version)(void);
-char* (*otr_start_query)(void);
-void (*otr_poll)(void);
-void (*otr_on_connect)(ProfAccount *account);
-void (*otr_keygen)(ProfAccount *account);
+void otr_init(void);
+void otr_shutdown(void);
+char* otr_libotr_version(void);
+char* otr_start_query(void);
+void otr_poll(void);
+void otr_on_connect(ProfAccount *account);
 
-gboolean (*otr_key_loaded)(void);
-gboolean (*otr_is_secure)(const char * const recipient);
+char* otr_on_message_recv(const char * const barejid, const char * const resource, const char * const message, gboolean *decrypted);
+gboolean otr_on_message_send(ProfChatWin *chatwin, const char * const message);
 
-gboolean (*otr_is_trusted)(const char * const recipient);
-void (*otr_trust)(const char * const recipient);
-void (*otr_untrust)(const char * const recipient);
+void otr_keygen(ProfAccount *account);
 
-void (*otr_smp_secret)(const char * const recipient, const char *secret);
-void (*otr_smp_question)(const char * const recipient, const char *question, const char *answer);
-void (*otr_smp_answer)(const char * const recipient, const char *answer);
+char* otr_tag_message(const char * const msg);
 
-void (*otr_end_session)(const char * const recipient);
+gboolean otr_key_loaded(void);
+gboolean otr_is_secure(const char * const recipient);
 
-char * (*otr_get_my_fingerprint)(void);
-char * (*otr_get_their_fingerprint)(const char * const recipient);
+gboolean otr_is_trusted(const char * const recipient);
+void otr_trust(const char * const recipient);
+void otr_untrust(const char * const recipient);
 
-char * (*otr_encrypt_message)(const char * const to, const char * const message);
-char * (*otr_decrypt_message)(const char * const from, const char * const message,
-    gboolean *was_decrypted);
+void otr_smp_secret(const char * const recipient, const char *secret);
+void otr_smp_question(const char * const recipient, const char *question, const char *answer);
+void otr_smp_answer(const char * const recipient, const char *answer);
 
-void (*otr_free_message)(char *message);
+void otr_end_session(const char * const recipient);
 
-prof_otrpolicy_t (*otr_get_policy)(const char * const recipient);
+char * otr_get_my_fingerprint(void);
+char * otr_get_their_fingerprint(const char * const recipient);
+
+char * otr_encrypt_message(const char * const to, const char * const message);
+char * otr_decrypt_message(const char * const from, const char * const message,
+    gboolean *decrypted);
+
+void otr_free_message(char *message);
+
+prof_otrpolicy_t otr_get_policy(const char * const recipient);
 
 #endif

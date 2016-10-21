@@ -13,7 +13,10 @@ Build-Depends:
  pkg-config,
  libexpat1-dev,
  libncursesw5-dev,
+ libreadline-dev,
+ libgpgme11-dev,
  libcurl4-gnutls-dev,
+ uuid-dev,
  libcmocka-dev
 Standards-Version: 3.9.6
 Homepage: http://www.profanity.im/
