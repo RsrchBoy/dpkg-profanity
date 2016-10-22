@@ -1,7 +1,7 @@
 /*
  * statusbar.c
  *
- * Copyright (C) 2012 - 2015 James Booth <boothj5@gmail.com>
+ * Copyright (C) 2012 - 2016 James Booth <boothj5@gmail.com>
  *
  * This file is part of Profanity.
  *
@@ -16,7 +16,7 @@
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with Profanity.  If not, see <http://www.gnu.org/licenses/>.
+ * along with Profanity.  If not, see <https://www.gnu.org/licenses/>.
  *
  * In addition, as a special exception, the copyright holders give permission to
  * link the code of portions of this program with the OpenSSL library under
@@ -45,10 +45,10 @@
 #endif
 
 #include "config/theme.h"
+#include "config/preferences.h"
 #include "ui/ui.h"
 #include "ui/statusbar.h"
 #include "ui/inputwin.h"
-#include "config/preferences.h"
 
 #define TIME_CHECK 60000000
 
@@ -61,6 +61,7 @@ static int is_active[12];
 static GHashTable *remaining_active;
 static int is_new[12];
 static GHashTable *remaining_new;
+static GTimeZone *tz;
 static GDateTime *last_time;
 static int current;
 
@@ -95,10 +96,12 @@ create_status_bar(void)
     mvwprintw(status_bar, 0, cols - 34 + ((current - 1) * 3), bracket);
     wattroff(status_bar, bracket_attrs);
 
+    tz = g_time_zone_new_local();
+
     if (last_time) {
         g_date_time_unref(last_time);
     }
-    last_time = g_date_time_new_now_local();
+    last_time = g_date_time_new_now(tz);
 
     _status_bar_draw();
 }
@@ -129,11 +132,17 @@ status_bar_resize(void)
 
     if (message) {
         char *time_pref = prefs_get_string(PREF_TIME_STATUSBAR);
-        gchar *date_fmt = g_date_time_format(last_time, time_pref);
+
+        gchar *date_fmt = NULL;
+        if (g_strcmp0(time_pref, "off") == 0) {
+            date_fmt = g_strdup("");
+        } else {
+            date_fmt = g_date_time_format(last_time, time_pref);
+        }
         assert(date_fmt != NULL);
         size_t len = strlen(date_fmt);
         g_free(date_fmt);
-        if (g_strcmp0(time_pref, "") != 0) {
+        if (g_strcmp0(time_pref, "off") != 0) {
             /* 01234567890123456
              *  [HH:MM]  message */
             mvwprintw(status_bar, 0, 5 + len, message);
@@ -298,7 +307,7 @@ status_bar_get_password(void)
 }
 
 void
-status_bar_print_message(const char * const msg)
+status_bar_print_message(const char *const msg)
 {
     werase(status_bar);
 
@@ -308,11 +317,17 @@ status_bar_print_message(const char * const msg)
     message = strdup(msg);
 
     char *time_pref = prefs_get_string(PREF_TIME_STATUSBAR);
-    gchar *date_fmt = g_date_time_format(last_time, time_pref);
+    gchar *date_fmt = NULL;
+    if (g_strcmp0(time_pref, "off") == 0) {
+        date_fmt = g_strdup("");
+    } else {
+        date_fmt = g_date_time_format(last_time, time_pref);
+    }
+
     assert(date_fmt != NULL);
     size_t len = strlen(date_fmt);
     g_free(date_fmt);
-    if (g_strcmp0(time_pref, "") != 0) {
+    if (g_strcmp0(time_pref, "off") != 0) {
         mvwprintw(status_bar, 0, 5 + len, message);
     } else {
         mvwprintw(status_bar, 0, 1, message);
@@ -439,12 +454,12 @@ _status_bar_draw(void)
     if (last_time) {
         g_date_time_unref(last_time);
     }
-    last_time = g_date_time_new_now_local();
+    last_time = g_date_time_new_now(tz);
 
     int bracket_attrs = theme_attrs(THEME_STATUS_BRACKET);
 
     char *time_pref = prefs_get_string(PREF_TIME_STATUSBAR);
-    if (g_strcmp0(time_pref, "") != 0) {
+    if (g_strcmp0(time_pref, "off") != 0) {
         gchar *date_fmt = g_date_time_format(last_time, time_pref);
         assert(date_fmt != NULL);
         size_t len = strlen(date_fmt);

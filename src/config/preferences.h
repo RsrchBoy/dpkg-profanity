@@ -1,7 +1,7 @@
 /*
  * preferences.h
  *
- * Copyright (C) 2012 - 2015 James Booth <boothj5@gmail.com>
+ * Copyright (C) 2012 - 2016 James Booth <boothj5@gmail.com>
  *
  * This file is part of Profanity.
  *
@@ -16,7 +16,7 @@
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with Profanity.  If not, see <http://www.gnu.org/licenses/>.
+ * along with Profanity.  If not, see <https://www.gnu.org/licenses/>.
  *
  * In addition, as a special exception, the copyright holders give permission to
  * link the code of portions of this program with the OpenSSL library under
@@ -32,8 +32,8 @@
  *
  */
 
-#ifndef PREFERENCES_H
-#define PREFERENCES_H
+#ifndef CONFIG_PREFERENCES_H
+#define CONFIG_PREFERENCES_H
 
 #include "config.h"
 
@@ -52,6 +52,8 @@ typedef enum {
     PREF_TITLEBAR_SHOW,
     PREF_TITLEBAR_GOODBYE,
     PREF_FLASH,
+    PREF_TRAY,
+    PREF_TRAY_READ,
     PREF_INTYPE,
     PREF_HISTORY,
     PREF_CARBONS,
@@ -64,14 +66,37 @@ typedef enum {
     PREF_ROSTER_SIZE,
     PREF_ROSTER_OFFLINE,
     PREF_ROSTER_RESOURCE,
+    PREF_ROSTER_PRESENCE,
+    PREF_ROSTER_STATUS,
     PREF_ROSTER_EMPTY,
     PREF_ROSTER_BY,
+    PREF_ROSTER_ORDER,
+    PREF_ROSTER_UNREAD,
+    PREF_ROSTER_COUNT,
+    PREF_ROSTER_COUNT_ZERO,
+    PREF_ROSTER_PRIORITY,
+    PREF_ROSTER_WRAP,
+    PREF_ROSTER_RESOURCE_JOIN,
+    PREF_ROSTER_CONTACTS,
+    PREF_ROSTER_UNSUBSCRIBED,
+    PREF_ROSTER_ROOMS,
+    PREF_ROSTER_ROOMS_POS,
+    PREF_ROSTER_ROOMS_BY,
+    PREF_ROSTER_ROOMS_ORDER,
+    PREF_ROSTER_ROOMS_UNREAD,
+    PREF_ROSTER_PRIVATE,
     PREF_MUC_PRIVILEGES,
     PREF_PRESENCE,
     PREF_WRAP,
     PREF_WINS_AUTO_TIDY,
-    PREF_TIME,
+    PREF_TIME_CONSOLE,
+    PREF_TIME_CHAT,
+    PREF_TIME_MUC,
+    PREF_TIME_MUCCONFIG,
+    PREF_TIME_PRIVATE,
+    PREF_TIME_XMLCONSOLE,
     PREF_TIME_STATUSBAR,
+    PREF_TIME_LASTACTIVITY,
     PREF_STATUSES,
     PREF_STATUSES_CONSOLE,
     PREF_STATUSES_CHAT,
@@ -80,19 +105,24 @@ typedef enum {
     PREF_OUTTYPE,
     PREF_NOTIFY_TYPING,
     PREF_NOTIFY_TYPING_CURRENT,
-    PREF_NOTIFY_MESSAGE,
-    PREF_NOTIFY_MESSAGE_CURRENT,
-    PREF_NOTIFY_MESSAGE_TEXT,
+    PREF_NOTIFY_CHAT,
+    PREF_NOTIFY_CHAT_CURRENT,
+    PREF_NOTIFY_CHAT_TEXT,
     PREF_NOTIFY_ROOM,
+    PREF_NOTIFY_ROOM_MENTION,
+    PREF_NOTIFY_ROOM_TRIGGER,
     PREF_NOTIFY_ROOM_CURRENT,
     PREF_NOTIFY_ROOM_TEXT,
     PREF_NOTIFY_INVITE,
     PREF_NOTIFY_SUB,
+    PREF_NOTIFY_MENTION_CASE_SENSITIVE,
+    PREF_NOTIFY_MENTION_WHOLE_WORD,
     PREF_CHLOG,
     PREF_GRLOG,
     PREF_AUTOAWAY_CHECK,
     PREF_AUTOAWAY_MODE,
     PREF_AUTOAWAY_MESSAGE,
+    PREF_AUTOXA_MESSAGE,
     PREF_CONNECT_ACCOUNT,
     PREF_DEFAULT_ACCOUNT,
     PREF_LOG_ROTATE,
@@ -103,7 +133,14 @@ typedef enum {
     PREF_RESOURCE_MESSAGE,
     PREF_INPBLOCK_DYNAMIC,
     PREF_ENC_WARN,
-    PREF_PGP_LOG
+    PREF_PGP_LOG,
+    PREF_TLS_CERTPATH,
+    PREF_TLS_SHOW,
+    PREF_LASTACTIVITY,
+    PREF_CONSOLE_MUC,
+    PREF_CONSOLE_PRIVATE,
+    PREF_CONSOLE_CHAT,
+    PREF_BOOKMARK_INVITE,
 } preference_t;
 
 typedef struct prof_alias_t {
@@ -114,10 +151,14 @@ typedef struct prof_alias_t {
 void prefs_load(void);
 void prefs_close(void);
 
-char * prefs_find_login(char *prefix);
+char* prefs_find_login(char *prefix);
 void prefs_reset_login_search(void);
-char * prefs_autocomplete_boolean_choice(const char * const prefix);
+
+char* prefs_autocomplete_boolean_choice(const char *const prefix);
 void prefs_reset_boolean_choice(void);
+
+char* prefs_autocomplete_room_trigger(const char *const prefix);
+void prefs_reset_room_trigger_ac(void);
 
 gint prefs_get_gone(void);
 void prefs_set_gone(gint value);
@@ -132,6 +173,8 @@ void prefs_set_reconnect(gint value);
 gint prefs_get_reconnect(void);
 void prefs_set_autoping(gint value);
 gint prefs_get_autoping(void);
+void prefs_set_autoping_timeout(gint value);
+gint prefs_get_autoping_timeout(void);
 gint prefs_get_inpblock(void);
 void prefs_set_inpblock(gint value);
 
@@ -142,24 +185,83 @@ gint prefs_get_roster_size(void);
 
 gint prefs_get_autoaway_time(void);
 void prefs_set_autoaway_time(gint value);
+gint prefs_get_autoxa_time(void);
+void prefs_set_autoxa_time(gint value);
+
+gchar** prefs_get_plugins(void);
+void prefs_free_plugins(gchar **plugins);
+void prefs_add_plugin(const char *const name);
+void prefs_remove_plugin(const char *const name);
 
 char prefs_get_otr_char(void);
 void prefs_set_otr_char(char ch);
 char prefs_get_pgp_char(void);
 void prefs_set_pgp_char(char ch);
 
+char prefs_get_roster_header_char(void);
+void prefs_set_roster_header_char(char ch);
+void prefs_clear_roster_header_char(void);
+char prefs_get_roster_contact_char(void);
+void prefs_set_roster_contact_char(char ch);
+void prefs_clear_roster_contact_char(void);
+char prefs_get_roster_resource_char(void);
+void prefs_set_roster_resource_char(char ch);
+void prefs_clear_roster_resource_char(void);
+char prefs_get_roster_private_char(void);
+void prefs_set_roster_private_char(char ch);
+void prefs_clear_roster_private_char(void);
+char prefs_get_roster_room_char(void);
+void prefs_set_roster_room_char(char ch);
+void prefs_clear_roster_room_char(void);
+char prefs_get_roster_room_private_char(void);
+void prefs_set_roster_room_private_char(char ch);
+void prefs_clear_roster_room_private_char(void);
+
+gint prefs_get_roster_contact_indent(void);
+void prefs_set_roster_contact_indent(gint value);
+gint prefs_get_roster_resource_indent(void);
+void prefs_set_roster_resource_indent(gint value);
+gint prefs_get_roster_presence_indent(void);
+void prefs_set_roster_presence_indent(gint value);
+
 void prefs_add_login(const char *jid);
 
-gboolean prefs_add_alias(const char * const name, const char * const value);
-gboolean prefs_remove_alias(const char * const name);
-char* prefs_get_alias(const char * const name);
+void prefs_set_tray_timer(gint value);
+gint prefs_get_tray_timer(void);
+
+gboolean prefs_add_alias(const char *const name, const char *const value);
+gboolean prefs_remove_alias(const char *const name);
+char* prefs_get_alias(const char *const name);
 GList* prefs_get_aliases(void);
 void prefs_free_aliases(GList *aliases);
 
+gboolean prefs_add_room_notify_trigger(const char * const text);
+gboolean prefs_remove_room_notify_trigger(const char * const text);
+GList* prefs_get_room_notify_triggers(void);
+
 gboolean prefs_get_boolean(preference_t pref);
 void prefs_set_boolean(preference_t pref, gboolean value);
-char * prefs_get_string(preference_t pref);
+char* prefs_get_string(preference_t pref);
 void prefs_free_string(char *pref);
 void prefs_set_string(preference_t pref, char *value);
+
+gboolean prefs_do_chat_notify(gboolean current_win);
+gboolean prefs_do_room_notify(gboolean current_win, const char *const roomjid, const char *const mynick,
+    const char *const theirnick, const char *const message, gboolean mention, gboolean trigger_found);
+gboolean prefs_do_room_notify_mention(const char *const roomjid, int unread, gboolean mention, gboolean trigger);
+GList* prefs_message_get_triggers(const char *const message);
+
+void prefs_set_room_notify(const char *const roomjid, gboolean value);
+void prefs_set_room_notify_mention(const char *const roomjid, gboolean value);
+void prefs_set_room_notify_trigger(const char *const roomjid, gboolean value);
+gboolean prefs_reset_room_notify(const char *const roomjid);
+gboolean prefs_has_room_notify(const char *const roomjid);
+gboolean prefs_has_room_notify_mention(const char *const roomjid);
+gboolean prefs_has_room_notify_trigger(const char *const roomjid);
+gboolean prefs_get_room_notify(const char *const roomjid);
+gboolean prefs_get_room_notify_mention(const char *const roomjid);
+gboolean prefs_get_room_notify_trigger(const char *const roomjid);
+
+gchar* prefs_get_inputrc(void);
 
 #endif

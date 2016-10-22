@@ -1,7 +1,7 @@
 /*
  * occupantswin.c
  *
- * Copyright (C) 2012 - 2015 James Booth <boothj5@gmail.com>
+ * Copyright (C) 2012 - 2016 James Booth <boothj5@gmail.com>
  *
  * This file is part of Profanity.
  *
@@ -16,7 +16,7 @@
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with Profanity.  If not, see <http://www.gnu.org/licenses/>.
+ * along with Profanity.  If not, see <https://www.gnu.org/licenses/>.
  *
  * In addition, as a special exception, the copyright holders give permission to
  * link the code of portions of this program with the OpenSSL library under
@@ -34,10 +34,10 @@
 
 #include <assert.h>
 
+#include "config/preferences.h"
 #include "ui/ui.h"
 #include "ui/window.h"
-#include "window_list.h"
-#include "config/preferences.h"
+#include "ui/window_list.h"
 
 static void
 _occuptantswin_occupant(ProfLayoutSplit *layout, Occupant *occupant, gboolean showjid)
@@ -48,13 +48,13 @@ _occuptantswin_occupant(ProfLayoutSplit *layout, Occupant *occupant, gboolean sh
 
     GString *msg = g_string_new("   ");
     g_string_append(msg, occupant->nick);
-    win_printline_nowrap(layout->subwin, msg->str);
+    win_sub_print(layout->subwin, msg->str, TRUE, FALSE, 0);
     g_string_free(msg, TRUE);
 
     if (showjid && occupant->jid) {
         GString *msg = g_string_new("     ");
         g_string_append(msg, occupant->jid);
-        win_printline_nowrap(layout->subwin, msg->str);
+        win_sub_print(layout->subwin, msg->str, TRUE, FALSE, 0);
         g_string_free(msg, TRUE);
     }
 
@@ -62,7 +62,7 @@ _occuptantswin_occupant(ProfLayoutSplit *layout, Occupant *occupant, gboolean sh
 }
 
 void
-occupantswin_occupants(const char * const roomjid)
+occupantswin_occupants(const char *const roomjid)
 {
     ProfMucWin *mucwin = wins_get_muc(roomjid);
     if (mucwin) {
@@ -75,7 +75,7 @@ occupantswin_occupants(const char * const roomjid)
 
             if (prefs_get_boolean(PREF_MUC_PRIVILEGES)) {
                 wattron(layout->subwin, theme_attrs(THEME_OCCUPANTS_HEADER));
-                win_printline_nowrap(layout->subwin, " -Moderators");
+                win_sub_print(layout->subwin, " -Moderators", TRUE, FALSE, 0);
                 wattroff(layout->subwin, theme_attrs(THEME_OCCUPANTS_HEADER));
                 GList *roster_curr = occupants;
                 while (roster_curr) {
@@ -87,7 +87,7 @@ occupantswin_occupants(const char * const roomjid)
                 }
 
                 wattron(layout->subwin, theme_attrs(THEME_OCCUPANTS_HEADER));
-                win_printline_nowrap(layout->subwin, " -Participants");
+                win_sub_print(layout->subwin, " -Participants", TRUE, FALSE, 0);
                 wattroff(layout->subwin, theme_attrs(THEME_OCCUPANTS_HEADER));
                 roster_curr = occupants;
                 while (roster_curr) {
@@ -99,7 +99,7 @@ occupantswin_occupants(const char * const roomjid)
                 }
 
                 wattron(layout->subwin, theme_attrs(THEME_OCCUPANTS_HEADER));
-                win_printline_nowrap(layout->subwin, " -Visitors");
+                win_sub_print(layout->subwin, " -Visitors", TRUE, FALSE, 0);
                 wattroff(layout->subwin, theme_attrs(THEME_OCCUPANTS_HEADER));
                 roster_curr = occupants;
                 while (roster_curr) {
@@ -111,7 +111,7 @@ occupantswin_occupants(const char * const roomjid)
                 }
             } else {
                 wattron(layout->subwin, theme_attrs(THEME_OCCUPANTS_HEADER));
-                win_printline_nowrap(layout->subwin, " -Occupants\n");
+                win_sub_print(layout->subwin, " -Occupants\n", TRUE, FALSE, 0);
                 wattroff(layout->subwin, theme_attrs(THEME_OCCUPANTS_HEADER));
                 GList *roster_curr = occupants;
                 while (roster_curr) {

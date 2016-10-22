@@ -1,7 +1,7 @@
 /*
  * profanity.c
  *
- * Copyright (C) 2012 - 2015 James Booth <boothj5@gmail.com>
+ * Copyright (C) 2012 - 2016 James Booth <boothj5@gmail.com>
  *
  * This file is part of Profanity.
  *
@@ -16,7 +16,7 @@
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with Profanity.  If not, see <http://www.gnu.org/licenses/>.
+ * along with Profanity.  If not, see <https://www.gnu.org/licenses/>.
  *
  * In addition, as a special exception, the copyright holders give permission to
  * link the code of portions of this program with the OpenSSL library under
@@ -37,62 +37,75 @@
 #include "gitversion.h"
 #endif
 
+#ifdef HAVE_GTK
+#include "ui/tray.h"
+#endif
+
 #include <locale.h>
 #include <signal.h>
 #include <stdlib.h>
 #include <string.h>
-#include <assert.h>
 
 #include <glib.h>
 
 #include "profanity.h"
-#include "chat_session.h"
-#include "chat_state.h"
+#include "common.h"
+#include "log.h"
+#include "config/files.h"
+#include "config/tlscerts.h"
 #include "config/accounts.h"
 #include "config/preferences.h"
 #include "config/theme.h"
-#include "command/command.h"
-#include "common.h"
-#include "contact.h"
-#include "roster_list.h"
-#include "log.h"
-#include "muc.h"
+#include "config/tlscerts.h"
+#include "config/scripts.h"
+#include "command/cmd_defs.h"
+#include "plugins/plugins.h"
+#include "event/client_events.h"
+#include "ui/ui.h"
+#include "ui/window_list.h"
+#include "xmpp/resource.h"
+#include "xmpp/session.h"
+#include "xmpp/xmpp.h"
+#include "xmpp/muc.h"
+#include "xmpp/chat_session.h"
+#include "xmpp/chat_state.h"
+#include "xmpp/contact.h"
+#include "xmpp/roster_list.h"
+
 #ifdef HAVE_LIBOTR
 #include "otr/otr.h"
 #endif
+
 #ifdef HAVE_LIBGPGME
 #include "pgp/gpg.h"
 #endif
-#include "resource.h"
-#include "xmpp/xmpp.h"
-#include "ui/ui.h"
-#include "window_list.h"
-#include "event/client_events.h"
 
-static void _check_autoaway(void);
-static void _init(const int disable_tls, char *log_level);
+static void _init(char *log_level);
 static void _shutdown(void);
-static void _create_directories(void);
 static void _connect_default(const char * const account);
 
-static gboolean idle = FALSE;
 static gboolean cont = TRUE;
+static gboolean force_quit = FALSE;
 
 void
-prof_run(const int disable_tls, char *log_level, char *account_name)
+prof_run(char *log_level, char *account_name)
 {
-    _init(disable_tls, log_level);
+    _init(log_level);
+    plugins_on_start();
     _connect_default(account_name);
+
     ui_update();
 
     log_info("Starting main event loop");
 
-    char *line = NULL;
-    while(cont) {
-        log_stderr_handler();
-        _check_autoaway();
+    session_init_activity();
 
-        line = ui_readline();
+    char *line = NULL;
+    while(cont && !force_quit) {
+        log_stderr_handler();
+        session_check_autoaway();
+
+        line = inp_readline();
         if (line) {
             ProfWin *window = wins_get_current();
             cont = cmd_process_input(window, line);
@@ -105,48 +118,25 @@ prof_run(const int disable_tls, char *log_level, char *account_name)
 #ifdef HAVE_LIBOTR
         otr_poll();
 #endif
+        plugins_run_timed();
         notify_remind();
-        jabber_process_events(10);
+        session_process_events();
+        iq_autoping_check();
         ui_update();
+#ifdef HAVE_GTK
+        tray_update();
+#endif
     }
 }
 
 void
-prof_handle_idle(void)
+prof_set_quit(void)
 {
-    jabber_conn_status_t status = jabber_get_connection_status();
-    if (status == JABBER_CONNECTED) {
-        GSList *recipients = ui_get_chat_recipients();
-        GSList *curr = recipients;
-
-        while (curr) {
-            char *barejid = curr->data;
-            ProfChatWin *chatwin = wins_get_chat(barejid);
-            chat_state_handle_idle(chatwin->barejid, chatwin->state);
-            curr = g_slist_next(curr);
-        }
-
-        if (recipients) {
-            g_slist_free(recipients);
-        }
-    }
-}
-
-void
-prof_handle_activity(void)
-{
-    jabber_conn_status_t status = jabber_get_connection_status();
-    ProfWin *current = wins_get_current();
-
-    if ((status == JABBER_CONNECTED) && (current->type == WIN_CHAT)) {
-        ProfChatWin *chatwin = (ProfChatWin*)current;
-        assert(chatwin->memcheck == PROFCHATWIN_MEMCHECK);
-        chat_state_handle_typing(chatwin->barejid, chatwin->state);
-    }
+    force_quit = TRUE;
 }
 
 static void
-_connect_default(const char * const account)
+_connect_default(const char *const account)
 {
     ProfWin *window = wins_get_current();
     if (account) {
@@ -161,60 +151,7 @@ _connect_default(const char * const account)
 }
 
 static void
-_check_autoaway()
-{
-    jabber_conn_status_t conn_status = jabber_get_connection_status();
-    if (conn_status != JABBER_CONNECTED) {
-        return;
-    }
-
-    gint prefs_time = prefs_get_autoaway_time() * 60000;
-    unsigned long idle_ms = ui_get_idle_time();
-    char *pref_autoaway_mode = prefs_get_string(PREF_AUTOAWAY_MODE);
-
-    if (!idle) {
-        resource_presence_t current_presence = accounts_get_last_presence(jabber_get_account_name());
-        if ((current_presence == RESOURCE_ONLINE) || (current_presence == RESOURCE_CHAT)) {
-            if (idle_ms >= prefs_time) {
-                idle = TRUE;
-                char *pref_autoaway_message = prefs_get_string(PREF_AUTOAWAY_MESSAGE);
-
-                // handle away mode
-                if (strcmp(pref_autoaway_mode, "away") == 0) {
-                    cl_ev_presence_send(RESOURCE_AWAY, pref_autoaway_message, 0);
-                    ui_auto_away();
-
-                // handle idle mode
-                } else if (strcmp(pref_autoaway_mode, "idle") == 0) {
-                    cl_ev_presence_send(RESOURCE_ONLINE, pref_autoaway_message, idle_ms / 1000);
-                }
-
-                prefs_free_string(pref_autoaway_message);
-            }
-        }
-
-    } else {
-        if (idle_ms < prefs_time) {
-            idle = FALSE;
-
-            // handle check
-            if (prefs_get_boolean(PREF_AUTOAWAY_CHECK)) {
-                if (strcmp(pref_autoaway_mode, "away") == 0) {
-                    cl_ev_presence_send(RESOURCE_ONLINE, NULL, 0);
-                    ui_end_auto_away();
-                } else if (strcmp(pref_autoaway_mode, "idle") == 0) {
-                    cl_ev_presence_send(RESOURCE_ONLINE, NULL, 0);
-                    ui_titlebar_presence(CONTACT_ONLINE);
-                }
-            }
-        }
-    }
-
-    prefs_free_string(pref_autoaway_mode);
-}
-
-static void
-_init(const int disable_tls, char *log_level)
+_init(char *log_level)
 {
     setlocale(LC_ALL, "");
     // ignore SIGPIPE
@@ -222,7 +159,12 @@ _init(const int disable_tls, char *log_level)
     signal(SIGINT, SIG_IGN);
     signal(SIGTSTP, SIG_IGN);
     signal(SIGWINCH, ui_sigwinch_handler);
-    _create_directories();
+    if (pthread_mutex_init(&lock, NULL) != 0) {
+        log_error("Mutex init failed");
+        exit(1);
+    }
+    pthread_mutex_lock(&lock);
+    files_create_directories();
     log_level_t prof_log_level = log_level_from_string(log_level);
     prefs_load();
     log_init(prof_log_level);
@@ -243,11 +185,12 @@ _init(const int disable_tls, char *log_level)
     theme_init(theme);
     prefs_free_string(theme);
     ui_init();
-    jabber_init(disable_tls);
+    session_init();
     cmd_init();
     log_info("Initialising contact list");
-    roster_init();
     muc_init();
+    tlscerts_init();
+    scripts_init();
 #ifdef HAVE_LIBOTR
     otr_init();
 #endif
@@ -255,7 +198,11 @@ _init(const int disable_tls, char *log_level)
     p_gpg_init();
 #endif
     atexit(_shutdown);
-    ui_input_nonblocking(TRUE);
+    plugins_init();
+#ifdef HAVE_GTK
+    tray_init();
+#endif
+    inp_nonblocking(TRUE);
 }
 
 static void
@@ -268,13 +215,18 @@ _shutdown(void)
             ui_clear_win_title();
         }
     }
-    ui_close_all_wins();
-    jabber_disconnect();
-    jabber_shutdown();
-    roster_free();
+
+    jabber_conn_status_t conn_status = connection_get_status();
+    if (conn_status == JABBER_CONNECTED) {
+        cl_ev_disconnect();
+    }
+#ifdef HAVE_GTK
+    tray_shutdown();
+#endif
+    session_shutdown();
+    plugins_on_shutdown();
     muc_close();
     caps_close();
-    ui_close();
 #ifdef HAVE_LIBOTR
     otr_shutdown();
 #endif
@@ -284,39 +236,11 @@ _shutdown(void)
     chat_log_close();
     theme_close();
     accounts_close();
-    cmd_uninit();
+    tlscerts_close();
     log_stderr_close();
     log_close();
+    plugins_shutdown();
+    cmd_uninit();
+    ui_close();
     prefs_close();
-}
-
-static void
-_create_directories(void)
-{
-    gchar *xdg_config = xdg_get_config_home();
-    gchar *xdg_data = xdg_get_data_home();
-
-    GString *themes_dir = g_string_new(xdg_config);
-    g_string_append(themes_dir, "/profanity/themes");
-    GString *chatlogs_dir = g_string_new(xdg_data);
-    g_string_append(chatlogs_dir, "/profanity/chatlogs");
-    GString *logs_dir = g_string_new(xdg_data);
-    g_string_append(logs_dir, "/profanity/logs");
-
-    if (!mkdir_recursive(themes_dir->str)) {
-        log_error("Error while creating directory %s", themes_dir->str);
-    }
-    if (!mkdir_recursive(chatlogs_dir->str)) {
-        log_error("Error while creating directory %s", chatlogs_dir->str);
-    }
-    if (!mkdir_recursive(logs_dir->str)) {
-        log_error("Error while creating directory %s", logs_dir->str);
-    }
-
-    g_string_free(themes_dir, TRUE);
-    g_string_free(chatlogs_dir, TRUE);
-    g_string_free(logs_dir, TRUE);
-
-    g_free(xdg_config);
-    g_free(xdg_data);
 }

@@ -1,7 +1,7 @@
 /*
  * inputwin.c
  *
- * Copyright (C) 2012 - 2015 James Booth <boothj5@gmail.com>
+ * Copyright (C) 2012 - 2016 James Booth <boothj5@gmail.com>
  *
  * This file is part of Profanity.
  *
@@ -16,7 +16,7 @@
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with Profanity.  If not, see <http://www.gnu.org/licenses/>.
+ * along with Profanity.  If not, see <https://www.gnu.org/licenses/>.
  *
  * In addition, as a special exception, the copyright holders give permission to
  * link the code of portions of this program with the OpenSSL library under
@@ -35,11 +35,14 @@
 #define _XOPEN_SOURCE_EXTENDED
 #include "config.h"
 
+#include <stdio.h>
+#include <sys/select.h>
 #include <stdlib.h>
 #include <string.h>
 #include <wchar.h>
 #include <sys/time.h>
 #include <errno.h>
+#include <pthread.h>
 
 #include <readline/readline.h>
 #include <readline/history.h>
@@ -50,22 +53,23 @@
 #include <ncurses.h>
 #endif
 
-#include "command/command.h"
+#include "profanity.h"
+#include "log.h"
 #include "common.h"
+#include "command/cmd_ac.h"
+#include "config/files.h"
 #include "config/accounts.h"
 #include "config/preferences.h"
 #include "config/theme.h"
-#include "log.h"
-#include "muc.h"
-#include "profanity.h"
-#include "roster_list.h"
 #include "ui/ui.h"
 #include "ui/statusbar.h"
 #include "ui/inputwin.h"
 #include "ui/window.h"
-#include "window_list.h"
-#include "event/ui_events.h"
+#include "ui/window_list.h"
 #include "xmpp/xmpp.h"
+#include "xmpp/muc.h"
+#include "xmpp/roster_list.h"
+#include "xmpp/chat_state.h"
 
 static WINDOW *inp_win;
 static int pad_start = 0;
@@ -75,6 +79,7 @@ static struct timeval p_rl_timeout;
 static gint inp_timeout = 0;
 static gint no_input_count = 0;
 
+static FILE *discard;
 static fd_set fds;
 static int r;
 static char *inp_line = NULL;
@@ -86,26 +91,27 @@ static void _inp_win_handle_scroll(void);
 static int _inp_offset_to_col(char *str, int offset);
 static void _inp_write(char *line, int offset);
 
+static void _inp_rl_addfuncs(void);
 static int _inp_rl_getc(FILE *stream);
 static void _inp_rl_linehandler(char *line);
 static int _inp_rl_tab_handler(int count, int key);
-static int _inp_rl_clear_handler(int count, int key);
-static int _inp_rl_win1_handler(int count, int key);
-static int _inp_rl_win2_handler(int count, int key);
-static int _inp_rl_win3_handler(int count, int key);
-static int _inp_rl_win4_handler(int count, int key);
-static int _inp_rl_win5_handler(int count, int key);
-static int _inp_rl_win6_handler(int count, int key);
-static int _inp_rl_win7_handler(int count, int key);
-static int _inp_rl_win8_handler(int count, int key);
-static int _inp_rl_win9_handler(int count, int key);
-static int _inp_rl_win0_handler(int count, int key);
-static int _inp_rl_altleft_handler(int count, int key);
-static int _inp_rl_altright_handler(int count, int key);
-static int _inp_rl_pageup_handler(int count, int key);
-static int _inp_rl_pagedown_handler(int count, int key);
-static int _inp_rl_altpageup_handler(int count, int key);
-static int _inp_rl_altpagedown_handler(int count, int key);
+static int _inp_rl_win_clear_handler(int count, int key);
+static int _inp_rl_win_1_handler(int count, int key);
+static int _inp_rl_win_2_handler(int count, int key);
+static int _inp_rl_win_3_handler(int count, int key);
+static int _inp_rl_win_4_handler(int count, int key);
+static int _inp_rl_win_5_handler(int count, int key);
+static int _inp_rl_win_6_handler(int count, int key);
+static int _inp_rl_win_7_handler(int count, int key);
+static int _inp_rl_win_8_handler(int count, int key);
+static int _inp_rl_win_9_handler(int count, int key);
+static int _inp_rl_win_0_handler(int count, int key);
+static int _inp_rl_win_prev_handler(int count, int key);
+static int _inp_rl_win_next_handler(int count, int key);
+static int _inp_rl_win_pageup_handler(int count, int key);
+static int _inp_rl_win_pagedown_handler(int count, int key);
+static int _inp_rl_subwin_pageup_handler(int count, int key);
+static int _inp_rl_subwin_pagedown_handler(int count, int key);
 static int _inp_rl_startup_hook(void);
 
 void
@@ -116,7 +122,10 @@ create_input_window(void)
 #else
     ESCDELAY = 25;
 #endif
+    discard = fopen("/dev/null", "a");
+    rl_outstream = discard;
     rl_readline_name = "profanity";
+    _inp_rl_addfuncs();
     rl_getc_function = _inp_rl_getc;
     rl_startup_hook = _inp_rl_startup_hook;
     rl_callback_handler_install(NULL, _inp_rl_linehandler);
@@ -129,7 +138,7 @@ create_input_window(void)
     _inp_win_update_virtual();
 }
 
-char *
+char*
 inp_readline(void)
 {
     free(inp_line);
@@ -139,7 +148,9 @@ inp_readline(void)
     FD_ZERO(&fds);
     FD_SET(fileno(rl_instream), &fds);
     errno = 0;
+    pthread_mutex_unlock(&lock);
     r = select(FD_SETSIZE, &fds, NULL, NULL, &p_rl_timeout);
+    pthread_mutex_lock(&lock);
     if (r < 0) {
         if (errno != EINTR) {
             char *err_msg = strerror(errno);
@@ -155,7 +166,7 @@ inp_readline(void)
                 rl_line_buffer[0] != '/' &&
                 rl_line_buffer[0] != '\0' &&
                 rl_line_buffer[0] != '\n') {
-            prof_handle_activity();
+            chat_state_activity();
         }
 
         ui_reset_idle_time();
@@ -165,7 +176,7 @@ inp_readline(void)
         inp_nonblocking(TRUE);
     } else {
         inp_nonblocking(FALSE);
-        prof_handle_idle();
+        chat_state_idle();
     }
 
     if (inp_line) {
@@ -223,6 +234,23 @@ void
 inp_close(void)
 {
     rl_callback_handler_remove();
+    fclose(discard);
+}
+
+char*
+inp_get_line(void)
+{
+    werase(inp_win);
+    wmove(inp_win, 0, 0);
+    _inp_win_update_virtual();
+    doupdate();
+    char *line = NULL;
+    while (!line) {
+        line = inp_readline();
+        ui_update();
+    }
+    status_bar_clear();
+    return line;
 }
 
 char*
@@ -236,6 +264,7 @@ inp_get_password(void)
     get_password = TRUE;
     while (!password) {
         password = inp_readline();
+        ui_update();
     }
     get_password = FALSE;
     status_bar_clear();
@@ -245,15 +274,6 @@ inp_get_password(void)
 void
 inp_put_back(void)
 {
-    _inp_win_update_virtual();
-}
-
-void
-inp_win_clear(void)
-{
-    werase(inp_win);
-    wmove(inp_win, 0, 0);
-    pad_start = 0;
     _inp_win_update_virtual();
 }
 
@@ -275,13 +295,14 @@ _inp_write(char *line, int offset)
     _inp_win_handle_scroll();
 
     _inp_win_update_virtual();
+    doupdate();
 }
 
 static int
 _inp_printable(const wint_t ch)
 {
     char bytes[MB_CUR_MAX+1];
-    size_t utf_len = wcrtomb(bytes, ch, NULL);
+    size_t utf_len = wcrtomb(bytes, ch, (mbstate_t*)NULL);
     bytes[utf_len] = '\0';
     gunichar unichar = g_utf8_get_char(bytes);
 
@@ -296,7 +317,7 @@ _inp_offset_to_col(char *str, int offset)
 
     while (i < offset && str[i] != '\0') {
         gunichar uni = g_utf8_get_char(&str[i]);
-        size_t ch_len = mbrlen(&str[i], 4, NULL);
+        size_t ch_len = mbrlen(&str[i], MB_CUR_MAX, NULL);
         i += ch_len;
         col++;
         if (g_unichar_iswide(uni)) {
@@ -328,56 +349,90 @@ _inp_win_handle_scroll(void)
     }
 }
 
+static void
+_inp_rl_addfuncs(void)
+{
+    rl_add_funmap_entry("prof_win_1", _inp_rl_win_1_handler);
+    rl_add_funmap_entry("prof_win_2", _inp_rl_win_2_handler);
+    rl_add_funmap_entry("prof_win_3", _inp_rl_win_3_handler);
+    rl_add_funmap_entry("prof_win_4", _inp_rl_win_4_handler);
+    rl_add_funmap_entry("prof_win_5", _inp_rl_win_5_handler);
+    rl_add_funmap_entry("prof_win_6", _inp_rl_win_6_handler);
+    rl_add_funmap_entry("prof_win_7", _inp_rl_win_7_handler);
+    rl_add_funmap_entry("prof_win_8", _inp_rl_win_8_handler);
+    rl_add_funmap_entry("prof_win_9", _inp_rl_win_9_handler);
+    rl_add_funmap_entry("prof_win_0", _inp_rl_win_0_handler);
+    rl_add_funmap_entry("prof_win_prev", _inp_rl_win_prev_handler);
+    rl_add_funmap_entry("prof_win_next", _inp_rl_win_next_handler);
+    rl_add_funmap_entry("prof_win_pageup", _inp_rl_win_pageup_handler);
+    rl_add_funmap_entry("prof_win_pagedown", _inp_rl_win_pagedown_handler);
+    rl_add_funmap_entry("prof_subwin_pageup", _inp_rl_subwin_pageup_handler);
+    rl_add_funmap_entry("prof_subwin_pagedown", _inp_rl_subwin_pagedown_handler);
+    rl_add_funmap_entry("prof_win_clear", _inp_rl_win_clear_handler);
+}
+
 // Readline callbacks
 
 static int
 _inp_rl_startup_hook(void)
 {
-    rl_bind_keyseq("\\e1", _inp_rl_win1_handler);
-    rl_bind_keyseq("\\e2", _inp_rl_win2_handler);
-    rl_bind_keyseq("\\e3", _inp_rl_win3_handler);
-    rl_bind_keyseq("\\e4", _inp_rl_win4_handler);
-    rl_bind_keyseq("\\e5", _inp_rl_win5_handler);
-    rl_bind_keyseq("\\e6", _inp_rl_win6_handler);
-    rl_bind_keyseq("\\e7", _inp_rl_win7_handler);
-    rl_bind_keyseq("\\e8", _inp_rl_win8_handler);
-    rl_bind_keyseq("\\e9", _inp_rl_win9_handler);
-    rl_bind_keyseq("\\e0", _inp_rl_win0_handler);
+    rl_bind_keyseq("\\e1", _inp_rl_win_1_handler);
+    rl_bind_keyseq("\\e2", _inp_rl_win_2_handler);
+    rl_bind_keyseq("\\e3", _inp_rl_win_3_handler);
+    rl_bind_keyseq("\\e4", _inp_rl_win_4_handler);
+    rl_bind_keyseq("\\e5", _inp_rl_win_5_handler);
+    rl_bind_keyseq("\\e6", _inp_rl_win_6_handler);
+    rl_bind_keyseq("\\e7", _inp_rl_win_7_handler);
+    rl_bind_keyseq("\\e8", _inp_rl_win_8_handler);
+    rl_bind_keyseq("\\e9", _inp_rl_win_9_handler);
+    rl_bind_keyseq("\\e0", _inp_rl_win_0_handler);
 
-    rl_bind_keyseq("\\eOP", _inp_rl_win1_handler);
-    rl_bind_keyseq("\\eOQ", _inp_rl_win2_handler);
-    rl_bind_keyseq("\\eOR", _inp_rl_win3_handler);
-    rl_bind_keyseq("\\eOS", _inp_rl_win4_handler);
-    rl_bind_keyseq("\\e[15~", _inp_rl_win5_handler);
-    rl_bind_keyseq("\\e[17~", _inp_rl_win6_handler);
-    rl_bind_keyseq("\\e[18~", _inp_rl_win7_handler);
-    rl_bind_keyseq("\\e[19~", _inp_rl_win8_handler);
-    rl_bind_keyseq("\\e[20~", _inp_rl_win9_handler);
-    rl_bind_keyseq("\\e[21~", _inp_rl_win0_handler);
+    rl_bind_keyseq("\\eOP", _inp_rl_win_1_handler);
+    rl_bind_keyseq("\\eOQ", _inp_rl_win_2_handler);
+    rl_bind_keyseq("\\eOR", _inp_rl_win_3_handler);
+    rl_bind_keyseq("\\eOS", _inp_rl_win_4_handler);
+    rl_bind_keyseq("\\e[15~", _inp_rl_win_5_handler);
+    rl_bind_keyseq("\\e[17~", _inp_rl_win_6_handler);
+    rl_bind_keyseq("\\e[18~", _inp_rl_win_7_handler);
+    rl_bind_keyseq("\\e[19~", _inp_rl_win_8_handler);
+    rl_bind_keyseq("\\e[20~", _inp_rl_win_9_handler);
+    rl_bind_keyseq("\\e[21~", _inp_rl_win_0_handler);
 
-    rl_bind_keyseq("\\e[1;9D", _inp_rl_altleft_handler);
-    rl_bind_keyseq("\\e[1;3D", _inp_rl_altleft_handler);
-    rl_bind_keyseq("\\e\\e[D", _inp_rl_altleft_handler);
+    rl_bind_keyseq("\\e[1;9D", _inp_rl_win_prev_handler);
+    rl_bind_keyseq("\\e[1;3D", _inp_rl_win_prev_handler);
+    rl_bind_keyseq("\\e\\e[D", _inp_rl_win_prev_handler);
 
-    rl_bind_keyseq("\\e[1;9C", _inp_rl_altright_handler);
-    rl_bind_keyseq("\\e[1;3C", _inp_rl_altright_handler);
-    rl_bind_keyseq("\\e\\e[C", _inp_rl_altright_handler);
+    rl_bind_keyseq("\\e[1;9C", _inp_rl_win_next_handler);
+    rl_bind_keyseq("\\e[1;3C", _inp_rl_win_next_handler);
+    rl_bind_keyseq("\\e\\e[C", _inp_rl_win_next_handler);
 
-    rl_bind_keyseq("\\e\\e[5~", _inp_rl_altpageup_handler);
-    rl_bind_keyseq("\\e[5;3~", _inp_rl_altpageup_handler);
-    rl_bind_keyseq("\\e\\eOy", _inp_rl_altpageup_handler);
+    rl_bind_keyseq("\\e\\e[5~", _inp_rl_subwin_pageup_handler);
+    rl_bind_keyseq("\\e[5;3~", _inp_rl_subwin_pageup_handler);
+    rl_bind_keyseq("\\e\\eOy", _inp_rl_subwin_pageup_handler);
 
-    rl_bind_keyseq("\\e\\e[6~", _inp_rl_altpagedown_handler);
-    rl_bind_keyseq("\\e[6;3~", _inp_rl_altpagedown_handler);
-    rl_bind_keyseq("\\e\\eOs", _inp_rl_altpagedown_handler);
+    rl_bind_keyseq("\\e\\e[6~", _inp_rl_subwin_pagedown_handler);
+    rl_bind_keyseq("\\e[6;3~", _inp_rl_subwin_pagedown_handler);
+    rl_bind_keyseq("\\e\\eOs", _inp_rl_subwin_pagedown_handler);
 
-    rl_bind_keyseq("\\e[5~", _inp_rl_pageup_handler);
-    rl_bind_keyseq("\\eOy", _inp_rl_pageup_handler);
-    rl_bind_keyseq("\\e[6~", _inp_rl_pagedown_handler);
-    rl_bind_keyseq("\\eOs", _inp_rl_pagedown_handler);
+    rl_bind_keyseq("\\e[5~", _inp_rl_win_pageup_handler);
+    rl_bind_keyseq("\\eOy", _inp_rl_win_pageup_handler);
+    rl_bind_keyseq("\\e[6~", _inp_rl_win_pagedown_handler);
+    rl_bind_keyseq("\\eOs", _inp_rl_win_pagedown_handler);
 
     rl_bind_key('\t', _inp_rl_tab_handler);
-    rl_bind_key(CTRL('L'), _inp_rl_clear_handler);
+
+    // unbind unwanted mappings
+    rl_bind_keyseq("\\e=", NULL);
+
+    // disable readline completion
+    rl_variable_bind("disable-completion", "on");
+
+    // check for and load ~/.config/profanity/inputrc
+    char *inputrc = files_get_inputrc_file();
+    if (inputrc) {
+        rl_read_init_file(inputrc);
+        free(inputrc);
+    }
 
     return 0;
 }
@@ -399,13 +454,13 @@ _inp_rl_getc(FILE *stream)
     int ch = rl_getc(stream);
     if (_inp_printable(ch)) {
         ProfWin *window = wins_get_current();
-        cmd_reset_autocomplete(window);
+        cmd_ac_reset(window);
     }
     return ch;
 }
 
 static int
-_inp_rl_clear_handler(int count, int key)
+_inp_rl_win_clear_handler(int count, int key)
 {
     ProfWin *win = wins_get_current();
     win_clear(win);
@@ -423,15 +478,15 @@ _inp_rl_tab_handler(int count, int key)
     if ((strncmp(rl_line_buffer, "/", 1) != 0) && (current->type == WIN_MUC)) {
         char *result = muc_autocomplete(current, rl_line_buffer);
         if (result) {
-            rl_replace_line(result, 0);
+            rl_replace_line(result, 1);
             rl_point = rl_end;
             free(result);
         }
     } else if (strncmp(rl_line_buffer, "/", 1) == 0) {
         ProfWin *window = wins_get_current();
-        char *result = cmd_autocomplete(window, rl_line_buffer);
+        char *result = cmd_ac_complete(window, rl_line_buffer);
         if (result) {
-            rl_replace_line(result, 0);
+            rl_replace_line(result, 1);
             rl_point = rl_end;
             free(result);
         }
@@ -445,124 +500,128 @@ _go_to_win(int i)
 {
     ProfWin *window = wins_get_by_num(i);
     if (window) {
-        ui_ev_focus_win(window);
+        ui_focus_win(window);
     }
 }
 
 static int
-_inp_rl_win1_handler(int count, int key)
+_inp_rl_win_1_handler(int count, int key)
 {
     _go_to_win(1);
     return 0;
 }
 
 static int
-_inp_rl_win2_handler(int count, int key)
+_inp_rl_win_2_handler(int count, int key)
 {
     _go_to_win(2);
     return 0;
 }
 
 static int
-_inp_rl_win3_handler(int count, int key)
+_inp_rl_win_3_handler(int count, int key)
 {
     _go_to_win(3);
     return 0;
 }
 
 static int
-_inp_rl_win4_handler(int count, int key)
+_inp_rl_win_4_handler(int count, int key)
 {
     _go_to_win(4);
     return 0;
 }
 
 static int
-_inp_rl_win5_handler(int count, int key)
+_inp_rl_win_5_handler(int count, int key)
 {
     _go_to_win(5);
     return 0;
 }
 
 static int
-_inp_rl_win6_handler(int count, int key)
+_inp_rl_win_6_handler(int count, int key)
 {
     _go_to_win(6);
     return 0;
 }
 
 static int
-_inp_rl_win7_handler(int count, int key)
+_inp_rl_win_7_handler(int count, int key)
 {
     _go_to_win(7);
     return 0;
 }
 
 static int
-_inp_rl_win8_handler(int count, int key)
+_inp_rl_win_8_handler(int count, int key)
 {
     _go_to_win(8);
     return 0;
 }
 
 static int
-_inp_rl_win9_handler(int count, int key)
+_inp_rl_win_9_handler(int count, int key)
 {
     _go_to_win(9);
     return 0;
 }
 
 static int
-_inp_rl_win0_handler(int count, int key)
+_inp_rl_win_0_handler(int count, int key)
 {
     _go_to_win(0);
     return 0;
 }
 
 static int
-_inp_rl_altleft_handler(int count, int key)
+_inp_rl_win_prev_handler(int count, int key)
 {
     ProfWin *window = wins_get_previous();
     if (window) {
-        ui_ev_focus_win(window);
+        ui_focus_win(window);
     }
     return 0;
 }
 
 static int
-_inp_rl_altright_handler(int count, int key)
+_inp_rl_win_next_handler(int count, int key)
 {
     ProfWin *window = wins_get_next();
     if (window) {
-        ui_ev_focus_win(window);
+        ui_focus_win(window);
     }
     return 0;
 }
 
 static int
-_inp_rl_pageup_handler(int count, int key)
+_inp_rl_win_pageup_handler(int count, int key)
 {
-    ui_page_up();
+    ProfWin *current = wins_get_current();
+    win_page_up(current);
     return 0;
 }
 
 static int
-_inp_rl_pagedown_handler(int count, int key)
+_inp_rl_win_pagedown_handler(int count, int key)
 {
-    ui_page_down();
+    ProfWin *current = wins_get_current();
+    win_page_down(current);
     return 0;
 }
 
 static int
-_inp_rl_altpageup_handler(int count, int key)
+_inp_rl_subwin_pageup_handler(int count, int key)
 {
-    ui_subwin_page_up();
+    ProfWin *current = wins_get_current();
+    win_sub_page_up(current);
     return 0;
 }
 
 static int
-_inp_rl_altpagedown_handler(int count, int key)
+_inp_rl_subwin_pagedown_handler(int count, int key)
 {
-    ui_subwin_page_down();
+    ProfWin *current = wins_get_current();
+    win_sub_page_down(current);
     return 0;
 }

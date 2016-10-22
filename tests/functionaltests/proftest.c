@@ -166,15 +166,27 @@ init_prof_test(void **state)
     assert_true(prof_output_exact("Input blocking set to 5 milliseconds"));
     prof_input("/inpblock dynamic off");
     assert_true(prof_output_exact("Dynamic input blocking disabled"));
-    prof_input("/notify message off");
-    assert_true(prof_output_exact("Message notifications disabled"));
+    prof_input("/notify chat off");
+    assert_true(prof_output_exact("Chat notifications disabled"));
+    prof_input("/notify room off");
+    assert_true(prof_output_exact("Room notifications disabled"));
     prof_input("/wrap off");
     assert_true(prof_output_exact("Word wrap disabled"));
     prof_input("/roster hide");
     assert_true(prof_output_exact("Roster disabled"));
-    prof_input("/time main off");
-    prof_input("/time main off");
-    assert_true(prof_output_exact("Time display disabled"));
+    prof_input("/time console off");
+    prof_input("/time console off");
+    assert_true(prof_output_exact("Console time display disabled."));
+    prof_input("/time chat off");
+    assert_true(prof_output_exact("Chat time display disabled."));
+    prof_input("/time muc off");
+    assert_true(prof_output_exact("MUC time display disabled."));
+    prof_input("/time mucconfig off");
+    assert_true(prof_output_exact("MUC config time display disabled."));
+    prof_input("/time private off");
+    assert_true(prof_output_exact("Private chat time display disabled."));
+    prof_input("/time xml off");
+    assert_true(prof_output_exact("XML Console time display disabled."));
 }
 
 void
@@ -215,8 +227,8 @@ void
 prof_connect_with_roster(char *roster)
 {
     GString *roster_str = g_string_new(
-        "<iq type=\"result\" to=\"stabber@localhost/profanity\">"
-            "<query xmlns=\"jabber:iq:roster\" ver=\"362\">"
+        "<iq type='result' to='stabber@localhost/profanity'>"
+            "<query xmlns='jabber:iq:roster' ver='362'>"
     );
     g_string_append(roster_str, roster);
     g_string_append(roster_str,
@@ -228,13 +240,13 @@ prof_connect_with_roster(char *roster)
     g_string_free(roster_str, TRUE);
 
     stbbr_for_id("prof_presence_1",
-        "<presence id=\"prof_presence_1\" lang=\"en\" to=\"stabber@localhost/profanity\" from=\"stabber@localhost/profanity\">"
+        "<presence id='prof_presence_1' lang='en' to='stabber@localhost/profanity' from='stabber@localhost/profanity'>"
             "<priority>0</priority>"
-            "<c hash=\"sha-1\" xmlns=\"http://jabber.org/protocol/caps\" node=\"http://www.profanity.im\" ver=\"f8mrtdyAmhnj8Ca+630bThSL718=\"/>"
+            "<c hash='sha-1' xmlns='http://jabber.org/protocol/caps' node='http://www.profanity.im' ver='f8mrtdyAmhnj8Ca+630bThSL718='/>"
         "</presence>"
     );
 
-    prof_input("/connect stabber@localhost port 5230");
+    prof_input("/connect stabber@localhost server 127.0.0.1 port 5230 tls allow");
     prof_input("password");
 
     // Allow time for profanity to connect
@@ -245,10 +257,22 @@ prof_connect_with_roster(char *roster)
 }
 
 void
+prof_timeout(int timeout)
+{
+    exp_timeout = timeout;
+}
+
+void
+prof_timeout_reset(void)
+{
+    exp_timeout = 10;
+}
+
+void
 prof_connect(void)
 {
     prof_connect_with_roster(
-        "<item jid=\"buddy1@localhost\" subscription=\"both\" name=\"Buddy1\"/>"
-        "<item jid=\"buddy2@localhost\" subscription=\"both\" name=\"Buddy2\"/>"
+        "<item jid='buddy1@localhost' subscription='both' name='Buddy1'/>"
+        "<item jid='buddy2@localhost' subscription='both' name='Buddy2'/>"
     );
 }
