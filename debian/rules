@@ -4,4 +4,7 @@
 	dh $@ --with autoreconf
 
 override_dh_auto_configure:
-	dh_auto_configure -- --enable-notifications --enable-otr --enable-pgp 
+	dh_auto_configure -- --enable-notifications --enable-otr --enable-pgp \
+		--enable-plugins \
+		--enable-python-plugins \
+		--enable-c-plugins CFLAGS='-g -O0' CXXFLAGS='-g -O0'
