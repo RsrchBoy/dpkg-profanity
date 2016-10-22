@@ -1,7 +1,7 @@
 /*
  * inputwin.c
  *
- * Copyright (C) 2012 - 2015 James Booth <boothj5@gmail.com>
+ * Copyright (C) 2012 - 2016 James Booth <boothj5@gmail.com>
  *
  * This file is part of Profanity.
  *
@@ -16,7 +16,7 @@
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with Profanity.  If not, see <http://www.gnu.org/licenses/>.
+ * along with Profanity.  If not, see <https://www.gnu.org/licenses/>.
  *
  * In addition, as a special exception, the copyright holders give permission to
  * link the code of portions of this program with the OpenSSL library under
@@ -40,12 +40,10 @@
 #define INP_WIN_MAX 1000
 
 void create_input_window(void);
-char* inp_readline(void);
-void inp_nonblocking(gboolean reset);
 void inp_close(void);
-void inp_win_clear(void);
 void inp_win_resize(void);
 void inp_put_back(void);
 char* inp_get_password(void);
+char* inp_get_line(void);
 
 #endif

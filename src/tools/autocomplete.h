@@ -1,7 +1,7 @@
 /*
  * autocomplete.h
  *
- * Copyright (C) 2012 - 2015 James Booth <boothj5@gmail.com>
+ * Copyright (C) 2012 - 2016 James Booth <boothj5@gmail.com>
  *
  * This file is part of Profanity.
  *
@@ -16,7 +16,7 @@
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with Profanity.  If not, see <http://www.gnu.org/licenses/>.
+ * along with Profanity.  If not, see <https://www.gnu.org/licenses/>.
  *
  * In addition, as a special exception, the copyright holders give permission to
  * link the code of portions of this program with the OpenSSL library under
@@ -32,12 +32,12 @@
  *
  */
 
-#ifndef AUTOCOMPLETE_H
-#define AUTOCOMPLETE_H
+#ifndef TOOLS_AUTOCOMPLETE_H
+#define TOOLS_AUTOCOMPLETE_H
 
 #include <glib.h>
 
-typedef char*(*autocomplete_func)(const char * const);
+typedef char* (*autocomplete_func)(const char *const);
 typedef struct autocomplete_t *Autocomplete;
 
 // allocate new autocompleter with no items
@@ -50,21 +50,23 @@ void autocomplete_clear(Autocomplete ac);
 void autocomplete_free(Autocomplete ac);
 
 void autocomplete_add(Autocomplete ac, const char *item);
-void autocomplete_remove(Autocomplete ac, const char * const item);
+void autocomplete_add_all(Autocomplete ac, char **items);
+void autocomplete_remove(Autocomplete ac, const char *const item);
+void autocomplete_remove_all(Autocomplete ac, char **items);
 
 // find the next item prefixed with search string
-gchar * autocomplete_complete(Autocomplete ac, const gchar *search_str, gboolean quote);
+gchar* autocomplete_complete(Autocomplete ac, const gchar *search_str, gboolean quote);
 
-GSList * autocomplete_create_list(Autocomplete ac);
+GSList* autocomplete_create_list(Autocomplete ac);
 gint autocomplete_length(Autocomplete ac);
 
-char * autocomplete_param_with_func(const char * const input, char *command,
+char* autocomplete_param_with_func(const char *const input, char *command,
     autocomplete_func func);
 
-char * autocomplete_param_with_ac(const char * const input, char *command,
+char* autocomplete_param_with_ac(const char *const input, char *command,
     Autocomplete ac, gboolean quote);
 
-char * autocomplete_param_no_with_func(const char * const input, char *command,
+char* autocomplete_param_no_with_func(const char *const input, char *command,
     int arg_number, autocomplete_func func);
 
 void autocomplete_reset(Autocomplete ac);

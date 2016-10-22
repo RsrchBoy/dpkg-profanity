@@ -1,7 +1,7 @@
 /*
  * titlebar.h
  *
- * Copyright (C) 2012 - 2015 James Booth <boothj5@gmail.com>
+ * Copyright (C) 2012 - 2016 James Booth <boothj5@gmail.com>
  *
  * This file is part of Profanity.
  *
@@ -16,7 +16,7 @@
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with Profanity.  If not, see <http://www.gnu.org/licenses/>.
+ * along with Profanity.  If not, see <https://www.gnu.org/licenses/>.
  *
  * In addition, as a special exception, the copyright holders give permission to
  * link the code of portions of this program with the OpenSSL library under
@@ -39,7 +39,8 @@ void create_title_bar(void);
 void title_bar_update_virtual(void);
 void title_bar_resize(void);
 void title_bar_console(void);
-void title_bar_set_presence(contact_presence_t presence);
+void title_bar_set_connected(gboolean connected);
+void title_bar_set_tls(gboolean secured);
 void title_bar_switch(void);
 void title_bar_set_typing(gboolean is_typing);
 
