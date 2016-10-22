@@ -1,7 +1,7 @@
 /*
  * autocomplete.c
  *
- * Copyright (C) 2012 - 2015 James Booth <boothj5@gmail.com>
+ * Copyright (C) 2012 - 2016 James Booth <boothj5@gmail.com>
  *
  * This file is part of Profanity.
  *
@@ -16,7 +16,7 @@
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with Profanity.  If not, see <http://www.gnu.org/licenses/>.
+ * along with Profanity.  If not, see <https://www.gnu.org/licenses/>.
  *
  * In addition, as a special exception, the copyright holders give permission to
  * link the code of portions of this program with the OpenSSL library under
@@ -46,7 +46,7 @@ struct autocomplete_t {
     gchar *search_str;
 };
 
-static gchar * _search_from(Autocomplete ac, GSList *curr, gboolean quote);
+static gchar* _search_from(Autocomplete ac, GSList *curr, gboolean quote);
 
 Autocomplete
 autocomplete_new(void)
@@ -118,7 +118,16 @@ autocomplete_add(Autocomplete ac, const char *item)
 }
 
 void
-autocomplete_remove(Autocomplete ac, const char * const item)
+autocomplete_add_all(Autocomplete ac, char **items)
+{
+    int i = 0;
+    for (i = 0; i < g_strv_length(items); i++) {
+        autocomplete_add(ac, items[i]);
+    }
+}
+
+void
+autocomplete_remove(Autocomplete ac, const char *const item)
 {
     if (ac) {
         GSList *curr = g_slist_find_custom(ac->items, item, (GCompareFunc)strcmp);
@@ -139,7 +148,16 @@ autocomplete_remove(Autocomplete ac, const char * const item)
     return;
 }
 
-GSList *
+void
+autocomplete_remove_all(Autocomplete ac, char **items)
+{
+    int i = 0;
+    for (i = 0; i < g_strv_length(items); i++) {
+        autocomplete_remove(ac, items[i]);
+    }
+}
+
+GSList*
 autocomplete_create_list(Autocomplete ac)
 {
     GSList *copy = NULL;
@@ -168,7 +186,7 @@ autocomplete_contains(Autocomplete ac, const char *value)
     return FALSE;
 }
 
-gchar *
+gchar*
 autocomplete_complete(Autocomplete ac, const gchar *search_str, gboolean quote)
 {
     gchar *found = NULL;
@@ -215,8 +233,8 @@ autocomplete_complete(Autocomplete ac, const gchar *search_str, gboolean quote)
     }
 }
 
-char *
-autocomplete_param_with_func(const char * const input, char *command, autocomplete_func func)
+char*
+autocomplete_param_with_func(const char *const input, char *command, autocomplete_func func)
 {
     GString *auto_msg = NULL;
     char *result = NULL;
@@ -224,7 +242,7 @@ autocomplete_param_with_func(const char * const input, char *command, autocomple
     sprintf(command_cpy, "%s ", command);
     int len = strlen(command_cpy);
 
-    if ((strncmp(input, command_cpy, len) == 0) && (strlen(input) > len)) {
+    if (strncmp(input, command_cpy, len) == 0) {
         int i;
         int inp_len = strlen(input);
         char prefix[inp_len];
@@ -246,8 +264,8 @@ autocomplete_param_with_func(const char * const input, char *command, autocomple
     return result;
 }
 
-char *
-autocomplete_param_with_ac(const char * const input, char *command, Autocomplete ac, gboolean quote)
+char*
+autocomplete_param_with_ac(const char *const input, char *command, Autocomplete ac, gboolean quote)
 {
     GString *auto_msg = NULL;
     char *result = NULL;
@@ -255,7 +273,7 @@ autocomplete_param_with_ac(const char * const input, char *command, Autocomplete
     sprintf(command_cpy, "%s ", command);
     int len = strlen(command_cpy);
     int inp_len = strlen(input);
-    if ((strncmp(input, command_cpy, len) == 0) && (strlen(input) > len)) {
+    if (strncmp(input, command_cpy, len) == 0) {
         int i;
         char prefix[inp_len];
         for(i = len; i < inp_len; i++) {
@@ -277,10 +295,10 @@ autocomplete_param_with_ac(const char * const input, char *command, Autocomplete
     return result;
 }
 
-char *
-autocomplete_param_no_with_func(const char * const input, char *command, int arg_number, autocomplete_func func)
+char*
+autocomplete_param_no_with_func(const char *const input, char *command, int arg_number, autocomplete_func func)
 {
-    if (strncmp(input, command, strlen(command)) == 0 && (strlen(input) > strlen(command))) {
+    if (strncmp(input, command, strlen(command)) == 0) {
         GString *result_str = NULL;
 
         // count tokens properly
@@ -309,7 +327,7 @@ autocomplete_param_no_with_func(const char * const input, char *command, int arg
     return NULL;
 }
 
-static gchar *
+static gchar*
 _search_from(Autocomplete ac, GSList *curr, gboolean quote)
 {
     while(curr) {

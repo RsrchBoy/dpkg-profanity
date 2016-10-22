@@ -1,7 +1,7 @@
 /*
  * gpg.c
  *
- * Copyright (C) 2012 - 2015 James Booth <boothj5@gmail.com>
+ * Copyright (C) 2012 - 2016 James Booth <boothj5@gmail.com>
  *
  * This file is part of Profanity.
  *
@@ -16,7 +16,7 @@
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with Profanity.  If not, see <http://www.gnu.org/licenses/>.
+ * along with Profanity.  If not, see <https://www.gnu.org/licenses/>.
  *
  * In addition, as a special exception, the copyright holders give permission to
  * link the code of portions of this program with the OpenSSL library under
@@ -44,9 +44,10 @@
 #include <glib/gstdio.h>
 #include <gpgme.h>
 
-#include "pgp/gpg.h"
 #include "log.h"
 #include "common.h"
+#include "pgp/gpg.h"
+#include "config/files.h"
 #include "tools/autocomplete.h"
 #include "ui/ui.h"
 
@@ -66,8 +67,8 @@ static char *passphrase_attempt;
 
 static Autocomplete key_ac;
 
-static char* _remove_header_footer(char *str, const char * const footer);
-static char* _add_header_footer(const char * const str, const char * const header, const char * const footer);
+static char* _remove_header_footer(char *str, const char *const footer);
+static char* _add_header_footer(const char *const str, const char *const header, const char *const footer);
 static void _save_pubkeys(void);
 
 void
@@ -79,7 +80,7 @@ _p_gpg_free_pubkeyid(ProfPGPPubKeyId *pubkeyid)
     free(pubkeyid);
 }
 
-static gpgme_error_t *
+static gpgme_error_t*
 _p_gpg_passphrase_cb(void *hook, const char *uid_hint, const char *passphrase_info, int prev_was_bad, int fd)
 {
     if (passphrase) {
@@ -154,14 +155,13 @@ p_gpg_close(void)
 }
 
 void
-p_gpg_on_connect(const char * const barejid)
+p_gpg_on_connect(const char *const barejid)
 {
-    gchar *data_home = xdg_get_data_home();
-    GString *pubsfile = g_string_new(data_home);
-    free(data_home);
-
+    char *pgpdir = files_get_data_path(DIR_PGP);
+    GString *pubsfile = g_string_new(pgpdir);
+    free(pgpdir);
     gchar *account_dir = str_replace(barejid, "@", "_at_");
-    g_string_append(pubsfile, "/profanity/pgp/");
+    g_string_append(pubsfile, "/");
     g_string_append(pubsfile, account_dir);
     free(account_dir);
 
@@ -262,7 +262,7 @@ p_gpg_on_disconnect(void)
 }
 
 gboolean
-p_gpg_addkey(const char * const jid, const char * const keyid)
+p_gpg_addkey(const char *const jid, const char *const keyid)
 {
     gpgme_ctx_t ctx;
     gpgme_error_t error = gpgme_new(&ctx);
@@ -294,7 +294,7 @@ p_gpg_addkey(const char * const jid, const char * const keyid)
     return TRUE;
 }
 
-static ProfPGPKey *
+static ProfPGPKey*
 _p_gpg_key_new(void)
 {
     ProfPGPKey *p_pgpkey = malloc(sizeof(ProfPGPKey));
@@ -321,7 +321,7 @@ _p_gpg_free_key(ProfPGPKey *key)
     }
 }
 
-GHashTable *
+GHashTable*
 p_gpg_list_keys(void)
 {
     gpgme_error_t error;
@@ -411,7 +411,7 @@ p_gpg_free_keys(GHashTable *keys)
 }
 
 
-GHashTable *
+GHashTable*
 p_gpg_pubkeys(void)
 {
     return pubkeys;
@@ -424,12 +424,13 @@ p_gpg_libver(void)
 }
 
 gboolean
-p_gpg_valid_key(const char * const keyid)
+p_gpg_valid_key(const char *const keyid, char **err_str)
 {
     gpgme_ctx_t ctx;
     gpgme_error_t error = gpgme_new(&ctx);
     if (error) {
         log_error("GPG: Failed to create gpgme context. %s %s", gpgme_strsource(error), gpgme_strerror(error));
+        *err_str = strdup(gpgme_strerror(error));
         return FALSE;
     }
 
@@ -438,29 +439,32 @@ p_gpg_valid_key(const char * const keyid)
 
     if (error || key == NULL) {
         log_error("GPG: Failed to get key. %s %s", gpgme_strsource(error), gpgme_strerror(error));
+        *err_str = strdup(gpgme_strerror(error));
         gpgme_release(ctx);
         return FALSE;
     }
 
-    if (key) {
+    if (key == NULL) {
+        *err_str = strdup("Unknown error");
         gpgme_release(ctx);
-        gpgme_key_unref(key);
-        return TRUE;
+        return FALSE;
     }
 
     gpgme_release(ctx);
-    return FALSE;
+    gpgme_key_unref(key);
+    return TRUE;
+
 }
 
 gboolean
-p_gpg_available(const char * const barejid)
+p_gpg_available(const char *const barejid)
 {
     char *pubkey = g_hash_table_lookup(pubkeys, barejid);
     return (pubkey != NULL);
 }
 
 void
-p_gpg_verify(const char * const barejid, const char *const sign)
+p_gpg_verify(const char *const barejid, const char *const sign)
 {
     if (!sign) {
         return;
@@ -515,7 +519,7 @@ p_gpg_verify(const char * const barejid, const char *const sign)
 }
 
 char*
-p_gpg_sign(const char * const str, const char * const fp)
+p_gpg_sign(const char *const str, const char *const fp)
 {
     gpgme_ctx_t ctx;
     gpgme_error_t error = gpgme_new(&ctx);
@@ -588,8 +592,8 @@ p_gpg_sign(const char * const str, const char * const fp)
     return result;
 }
 
-char *
-p_gpg_encrypt(const char * const barejid, const char * const message)
+char*
+p_gpg_encrypt(const char *const barejid, const char *const message, const char *const fp)
 {
     ProfPGPPubKeyId *pubkeyid = g_hash_table_lookup(pubkeys, barejid);
     if (!pubkeyid) {
@@ -599,10 +603,11 @@ p_gpg_encrypt(const char * const barejid, const char * const message)
         return NULL;
     }
 
-    gpgme_key_t keys[2];
+    gpgme_key_t keys[3];
 
     keys[0] = NULL;
     keys[1] = NULL;
+    keys[2] = NULL;
 
     gpgme_ctx_t ctx;
     gpgme_error_t error = gpgme_new(&ctx);
@@ -611,16 +616,23 @@ p_gpg_encrypt(const char * const barejid, const char * const message)
         return NULL;
     }
 
-    gpgme_key_t key;
-    error = gpgme_get_key(ctx, pubkeyid->id, &key, 0);
-
-    if (error || key == NULL) {
-        log_error("GPG: Failed to get key. %s %s", gpgme_strsource(error), gpgme_strerror(error));
+    gpgme_key_t receiver_key;
+    error = gpgme_get_key(ctx, pubkeyid->id, &receiver_key, 0);
+    if (error || receiver_key == NULL) {
+        log_error("GPG: Failed to get receiver_key. %s %s", gpgme_strsource(error), gpgme_strerror(error));
         gpgme_release(ctx);
         return NULL;
     }
+    keys[0] = receiver_key;
 
-    keys[0] = key;
+    gpgme_key_t sender_key = NULL;
+    error = gpgme_get_key(ctx, fp, &sender_key, 0);
+    if (error || sender_key == NULL) {
+        log_error("GPG: Failed to get sender_key. %s %s", gpgme_strsource(error), gpgme_strerror(error));
+        gpgme_release(ctx);
+        return NULL;
+    }
+    keys[1] = sender_key;
 
     gpgme_data_t plain;
     gpgme_data_new_from_mem(&plain, message, strlen(message), 1);
@@ -632,7 +644,8 @@ p_gpg_encrypt(const char * const barejid, const char * const message)
     error = gpgme_op_encrypt(ctx, keys, GPGME_ENCRYPT_ALWAYS_TRUST, plain, cipher);
     gpgme_data_release(plain);
     gpgme_release(ctx);
-    gpgme_key_unref(key);
+    gpgme_key_unref(receiver_key);
+    gpgme_key_unref(sender_key);
 
     if (error) {
         log_error("GPG: Failed to encrypt message. %s %s", gpgme_strsource(error), gpgme_strerror(error));
@@ -654,8 +667,8 @@ p_gpg_encrypt(const char * const barejid, const char * const message)
     return result;
 }
 
-char *
-p_gpg_decrypt(const char * const cipher)
+char*
+p_gpg_decrypt(const char *const cipher)
 {
     gpgme_ctx_t ctx;
     gpgme_error_t error = gpgme_new(&ctx);
@@ -687,19 +700,29 @@ p_gpg_decrypt(const char * const cipher)
 
     gpgme_decrypt_result_t res = gpgme_op_decrypt_result(ctx);
     if (res) {
+        GString *recipients_str = g_string_new("");
         gpgme_recipient_t recipient = res->recipients;
-        if (recipient) {
+        while (recipient) {
             gpgme_key_t key;
             error = gpgme_get_key(ctx, recipient->keyid, &key, 1);
 
             if (!error && key) {
                 const char *addr = gpgme_key_get_string_attr(key, GPGME_ATTR_EMAIL, NULL, 0);
                 if (addr) {
-                    log_debug("GPG: Decrypted message for recipient: %s", addr);
+                    g_string_append(recipients_str, addr);
                 }
                 gpgme_key_unref(key);
             }
+
+            if (recipient->next) {
+                g_string_append(recipients_str, ", ");
+            }
+
+            recipient = recipient->next;
         }
+
+        log_debug("GPG: Decrypted message for recipients: %s", recipients_str->str);
+        g_string_free(recipients_str, TRUE);
     }
     gpgme_release(ctx);
 
@@ -725,8 +748,8 @@ p_gpg_free_decrypted(char *decrypted)
     g_free(decrypted);
 }
 
-char *
-p_gpg_autocomplete_key(const char * const search_str)
+char*
+p_gpg_autocomplete_key(const char *const search_str)
 {
     return autocomplete_complete(key_ac, search_str, TRUE);
 }
@@ -737,7 +760,7 @@ p_gpg_autocomplete_key_reset(void)
     autocomplete_reset(key_ac);
 }
 
-char *
+char*
 p_gpg_format_fp_str(char *fp)
 {
     if (!fp) {
@@ -761,7 +784,7 @@ p_gpg_format_fp_str(char *fp)
 }
 
 static char*
-_remove_header_footer(char *str, const char * const footer)
+_remove_header_footer(char *str, const char *const footer)
 {
     int pos = 0;
     int newlines = 0;
@@ -785,7 +808,7 @@ _remove_header_footer(char *str, const char * const footer)
 }
 
 static char*
-_add_header_footer(const char * const str, const char * const header, const char * const footer)
+_add_header_footer(const char *const str, const char *const header, const char *const footer)
 {
     GString *result_str = g_string_new("");
 

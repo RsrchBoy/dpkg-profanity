@@ -1,7 +1,7 @@
 /*
  * account.c
  *
- * Copyright (C) 2012 - 2015 James Booth <boothj5@gmail.com>
+ * Copyright (C) 2012 - 2016 James Booth <boothj5@gmail.com>
  *
  * This file is part of Profanity.
  *
@@ -16,7 +16,7 @@
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with Profanity.  If not, see <http://www.gnu.org/licenses/>.
+ * along with Profanity.  If not, see <https://www.gnu.org/licenses/>.
  *
  * In addition, as a special exception, the copyright holders give permission to
  * link the code of portions of this program with the OpenSSL library under
@@ -38,20 +38,22 @@
 
 #include <glib.h>
 
-#include "jid.h"
-#include "config/account.h"
 #include "common.h"
 #include "log.h"
+#include "config/account.h"
+#include "xmpp/jid.h"
+#include "xmpp/resource.h"
 
 ProfAccount*
-account_new(const gchar * const name, const gchar * const jid,
-    const gchar * const password, const gchar * eval_password, gboolean enabled, const gchar * const server,
-    int port, const gchar * const resource, const gchar * const last_presence,
-    const gchar * const login_presence, int priority_online, int priority_chat,
+account_new(const gchar *const name, const gchar *const jid,
+    const gchar *const password, const gchar *eval_password, gboolean enabled, const gchar *const server,
+    int port, const gchar *const resource, const gchar *const last_presence,
+    const gchar *const login_presence, int priority_online, int priority_chat,
     int priority_away, int priority_xa, int priority_dnd,
-    const gchar * const muc_service, const gchar * const muc_nick,
-    const gchar * const otr_policy, GList *otr_manual, GList *otr_opportunistic,
-    GList *otr_always, const gchar * const pgp_keyid)
+    const gchar *const muc_service, const gchar *const muc_nick,
+    const gchar *const otr_policy, GList *otr_manual, GList *otr_opportunistic,
+    GList *otr_always, const gchar *const pgp_keyid, const char *const startscript,
+    const char *const theme, gchar *tls_policy)
 {
     ProfAccount *new_account = malloc(sizeof(ProfAccount));
 
@@ -150,10 +152,28 @@ account_new(const gchar * const name, const gchar * const jid,
         new_account->pgp_keyid = NULL;
     }
 
+    if (startscript != NULL) {
+        new_account->startscript = strdup(startscript);
+    } else {
+        new_account->startscript = NULL;
+    }
+
+    if (theme != NULL) {
+        new_account->theme = strdup(theme);
+    } else {
+        new_account->theme = NULL;
+    }
+
+    if (tls_policy != NULL) {
+        new_account->tls_policy = strdup(tls_policy);
+    } else {
+        new_account->tls_policy = NULL;
+    }
+
     return new_account;
 }
 
-char *
+char*
 account_create_full_jid(ProfAccount *account)
 {
     if (account->resource) {
@@ -217,6 +237,9 @@ account_free(ProfAccount *account)
         free(account->muc_nick);
         free(account->otr_policy);
         free(account->pgp_keyid);
+        free(account->startscript);
+        free(account->theme);
+        free(account->tls_policy);
         g_list_free_full(account->otr_manual, g_free);
         g_list_free_full(account->otr_opportunistic, g_free);
         g_list_free_full(account->otr_always, g_free);
