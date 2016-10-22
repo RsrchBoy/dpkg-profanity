@@ -5,8 +5,9 @@ profanity (0.5.0-0) UNRELEASED; urgency=medium
     0.5.0
   * Add autoconf-archive to the build-depends list.  (The better to keep
     dh_autoreconf from exploding)
+  * Enable plugins (C, Python)
 
- -- Chris Weyl <cweyl@alumni.drew.edu>  Sat, 22 Oct 2016 00:52:50 -0500
+ -- Chris Weyl <cweyl@alumni.drew.edu>  Sat, 22 Oct 2016 01:23:15 -0500
 
 profanity (0.4.7-1) unstable; urgency=medium
 
