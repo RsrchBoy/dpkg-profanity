@@ -5,6 +5,7 @@ Maintainer: Dariusz Dwornikowski <dariusz.dwornikowski@cs.put.poznan.pl>
 Build-Depends:
  debhelper (>= 9),
  dh-autoreconf,
+ autoconf-archive,
  libcaca-dev,
  libnotify-dev,
  libotr5-dev,
