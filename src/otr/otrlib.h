@@ -1,7 +1,7 @@
 /*
  * otrlib.h
  *
- * Copyright (C) 2012 - 2015 James Booth <boothj5@gmail.com>
+ * Copyright (C) 2012 - 2016 James Booth <boothj5@gmail.com>
  *
  * This file is part of Profanity.
  *
@@ -16,7 +16,7 @@
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with Profanity.  If not, see <http://www.gnu.org/licenses/>.
+ * along with Profanity.  If not, see <https://www.gnu.org/licenses/>.
  *
  * In addition, as a special exception, the copyright holders give permission to
  * link the code of portions of this program with the OpenSSL library under
@@ -32,8 +32,8 @@
  *
  */
 
-#ifndef OTRLIB_H
-#define OTRLIB_H
+#ifndef OTR_OTRLIB_H
+#define OTR_OTRLIB_H
 
 OtrlPolicy otrlib_policy(void);
 
@@ -44,15 +44,15 @@ void otrlib_init_ops(OtrlMessageAppOps *ops);
 void otrlib_init_timer(void);
 void otrlib_poll(void);
 
-ConnContext * otrlib_context_find(OtrlUserState user_state, const char * const recipient, char *jid);
+ConnContext* otrlib_context_find(OtrlUserState user_state, const char *const recipient, char *jid);
 
-void otrlib_end_session(OtrlUserState user_state, const char * const recipient, char *jid, OtrlMessageAppOps *ops);
+void otrlib_end_session(OtrlUserState user_state, const char *const recipient, char *jid, OtrlMessageAppOps *ops);
 
-gcry_error_t otrlib_encrypt_message(OtrlUserState user_state, OtrlMessageAppOps *ops, char *jid, const char * const to,
-    const char * const message, char **newmessage);
+gcry_error_t otrlib_encrypt_message(OtrlUserState user_state, OtrlMessageAppOps *ops, char *jid, const char *const to,
+    const char *const message, char **newmessage);
 
-int otrlib_decrypt_message(OtrlUserState user_state, OtrlMessageAppOps *ops, char *jid, const char * const from,
-    const char * const message, char **decrypted, OtrlTLV **tlvs);
+int otrlib_decrypt_message(OtrlUserState user_state, OtrlMessageAppOps *ops, char *jid, const char *const from,
+    const char *const message, char **decrypted, OtrlTLV **tlvs);
 
 void otrlib_handle_tlvs(OtrlUserState user_state, OtrlMessageAppOps *ops, ConnContext *context, OtrlTLV *tlvs, GHashTable *smp_initiators);
 

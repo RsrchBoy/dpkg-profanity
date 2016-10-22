@@ -20,6 +20,8 @@
 #include "test_receipts.h"
 #include "test_roster.h"
 #include "test_software.h"
+#include "test_muc.h"
+#include "test_disconnect.h"
 
 #define PROF_FUNC_TEST(test) unit_test_setup_teardown(test, init_prof_test, close_prof_test)
 
@@ -54,7 +56,8 @@ int main(int argc, char* argv[]) {
         PROF_FUNC_TEST(presence_missing_resource_defaults),
 
         PROF_FUNC_TEST(message_send),
-        PROF_FUNC_TEST(message_receive),
+        PROF_FUNC_TEST(message_receive_console),
+        PROF_FUNC_TEST(message_receive_chatwin),
 
         PROF_FUNC_TEST(sends_message_to_barejid_when_contact_offline),
         PROF_FUNC_TEST(sends_message_to_barejid_when_contact_online),
@@ -68,9 +71,11 @@ int main(int argc, char* argv[]) {
         PROF_FUNC_TEST(send_disable_carbons),
         PROF_FUNC_TEST(receive_carbon),
         PROF_FUNC_TEST(receive_self_carbon),
+        PROF_FUNC_TEST(receive_private_carbon),
 
         PROF_FUNC_TEST(send_receipt_request),
         PROF_FUNC_TEST(send_receipt_on_request),
+        PROF_FUNC_TEST(does_not_send_receipt_request_to_barejid),
         PROF_FUNC_TEST(sends_new_item),
         PROF_FUNC_TEST(sends_new_item_nick),
         PROF_FUNC_TEST(sends_remove_item),
@@ -82,6 +87,22 @@ int main(int argc, char* argv[]) {
         PROF_FUNC_TEST(display_software_version_result_when_from_domainpart),
         PROF_FUNC_TEST(show_message_in_chat_window_when_no_resource),
         PROF_FUNC_TEST(display_software_version_result_in_chat),
+
+        PROF_FUNC_TEST(sends_room_join),
+        PROF_FUNC_TEST(sends_room_join_with_default_muc_service),
+        PROF_FUNC_TEST(sends_room_join_with_nick),
+        PROF_FUNC_TEST(sends_room_join_with_password),
+        PROF_FUNC_TEST(sends_room_join_with_nick_and_password),
+        PROF_FUNC_TEST(shows_role_and_affiliation_on_join),
+        PROF_FUNC_TEST(shows_subject_on_join),
+        PROF_FUNC_TEST(shows_history_message),
+        PROF_FUNC_TEST(shows_occupant_join),
+        PROF_FUNC_TEST(shows_message),
+        PROF_FUNC_TEST(shows_all_messages_in_console_when_window_not_focussed),
+        PROF_FUNC_TEST(shows_first_message_in_console_when_window_not_focussed),
+        PROF_FUNC_TEST(shows_no_message_in_console_when_window_not_focussed),
+
+        PROF_FUNC_TEST(disconnect_ends_session),
     };
 
     return run_tests(all_tests);
