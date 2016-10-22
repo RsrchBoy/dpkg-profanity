@@ -1,3 +1,9 @@
+profanity (0.5.0-0~14.04~ppa2) trusty; urgency=medium
+
+  * Build for trusty.
+
+ -- Chris Weyl <cweyl@alumni.drew.edu>  Sat, 22 Oct 2016 01:08:16 -0500
+
 profanity (0.5.0-0~14.04~ppa1) trusty; urgency=medium
 
   * Build for trusty.
