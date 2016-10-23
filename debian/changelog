@@ -1,3 +1,9 @@
+profanity (0.5.0-0~16.04~ppa3) xenial; urgency=medium
+
+  * Build for xenial.
+
+ -- Chris Weyl <cweyl@alumni.drew.edu>  Sat, 22 Oct 2016 19:05:56 -0500
+
 profanity (0.5.0-0~16.04~ppa2) xenial; urgency=medium
 
   * Build for xenial.
