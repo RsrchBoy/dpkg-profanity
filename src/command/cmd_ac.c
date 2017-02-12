@@ -1,7 +1,7 @@
 /*
  * cmd_ac.c
  *
- * Copyright (C) 2012 - 2016 James Booth <boothj5@gmail.com>
+ * Copyright (C) 2012 - 2017 James Booth <boothj5@gmail.com>
  *
  * This file is part of Profanity.
  *
@@ -56,8 +56,6 @@
 #ifdef HAVE_LIBGPGME
 #include "pgp/gpg.h"
 #endif
-
-static char* _complete_filepath(const char *const input, char *const startstr);
 
 static char* _sub_autocomplete(ProfWin *window, const char *const input);
 static char* _notify_autocomplete(ProfWin *window, const char *const input);
@@ -361,6 +359,8 @@ cmd_ac_init(void)
     autocomplete_add(account_clear_ac, "pgpkeyid");
     autocomplete_add(account_clear_ac, "startscript");
     autocomplete_add(account_clear_ac, "theme");
+    autocomplete_add(account_clear_ac, "muc");
+    autocomplete_add(account_clear_ac, "resource");
 
     account_default_ac = autocomplete_new();
     autocomplete_add(account_default_ac, "set");
@@ -684,6 +684,7 @@ cmd_ac_init(void)
     tls_certpath_ac = autocomplete_new();
     autocomplete_add(tls_certpath_ac, "set");
     autocomplete_add(tls_certpath_ac, "clear");
+    autocomplete_add(tls_certpath_ac, "default");
 
     script_ac = autocomplete_new();
     autocomplete_add(script_ac, "run");
@@ -1120,6 +1121,113 @@ cmd_ac_uninit(void)
     autocomplete_free(tray_ac);
     autocomplete_free(presence_ac);
     autocomplete_free(presence_setting_ac);
+}
+
+char*
+cmd_ac_complete_filepath(const char *const input, char *const startstr)
+{
+    static char* last_directory = NULL;
+
+    unsigned int output_off = 0;
+
+    char *result = NULL;
+    char *tmp;
+
+    // strip command
+    char *inpcp = (char*)input + strlen(startstr);
+    while (*inpcp == ' ') {
+        inpcp++;
+    }
+
+    inpcp = strdup(inpcp);
+
+    // strip quotes
+    if (*inpcp == '"') {
+        tmp = strchr(inpcp+1, '"');
+        if (tmp) {
+            *tmp = '\0';
+        }
+        tmp = strdup(inpcp+1);
+        free(inpcp);
+        inpcp = tmp;
+    }
+
+    // expand ~ to $HOME
+    if (inpcp[0] == '~' && inpcp[1] == '/') {
+        if (asprintf(&tmp, "%s/%sfoo", getenv("HOME"), inpcp+2) == -1) {
+            return NULL;
+        }
+        output_off = strlen(getenv("HOME"))+1;
+    } else {
+        if (asprintf(&tmp, "%sfoo", inpcp) == -1) {
+            return NULL;
+        }
+    }
+    free(inpcp);
+    inpcp = tmp;
+
+    char* inpcp2 = strdup(inpcp);
+    char* foofile = strdup(basename(inpcp2));
+    char* directory = strdup(dirname(inpcp));
+    free(inpcp);
+    free(inpcp2);
+
+    if (!last_directory || strcmp(last_directory, directory) != 0) {
+        free(last_directory);
+        last_directory = directory;
+        autocomplete_reset(filepath_ac);
+
+        struct dirent *dir;
+
+        DIR *d = opendir(directory);
+        if (d) {
+            while ((dir = readdir(d)) != NULL) {
+                if (strcmp(dir->d_name, ".") == 0) {
+                    continue;
+                } else if (strcmp(dir->d_name, "..") == 0) {
+                    continue;
+                } else if (*(dir->d_name) == '.' && *foofile != '.') {
+                    // only show hidden files on explicit request
+                    continue;
+                }
+                char * acstring;
+                if (output_off) {
+                    if (asprintf(&tmp, "%s/%s", directory, dir->d_name) == -1) {
+                        free(foofile);
+                        return NULL;
+                    }
+                    if (asprintf(&acstring, "~/%s", tmp+output_off) == -1) {
+                        free(foofile);
+                        return NULL;
+                    }
+                    free(tmp);
+                } else if (strcmp(directory, "/") == 0) {
+                    if (asprintf(&acstring, "/%s", dir->d_name) == -1) {
+                        free(foofile);
+                        return NULL;
+                    }
+                } else {
+                    if (asprintf(&acstring, "%s/%s", directory, dir->d_name) == -1) {
+                        free(foofile);
+                        return NULL;
+                    }
+                }
+                autocomplete_add(filepath_ac, acstring);
+                free(acstring);
+            }
+            closedir(d);
+        }
+    } else {
+        free(directory);
+    }
+    free(foofile);
+
+    result = autocomplete_param_with_ac(input, startstr, filepath_ac, TRUE);
+    if (result) {
+        return result;
+    }
+
+    return NULL;
 }
 
 static char*
@@ -1565,9 +1673,9 @@ _bookmark_autocomplete(ProfWin *window, const char *const input)
 
     if (result && ((strcmp(args[0], "add") == 0) || (strcmp(args[0], "update") == 0)) ) {
         gboolean space_at_end = g_str_has_suffix(input, " ");
-        GString *beginning = g_string_new("/bookmark");
         int num_args = g_strv_length(args);
         if ((num_args == 2 && space_at_end) || (num_args == 3 && !space_at_end)) {
+            GString *beginning = g_string_new("/bookmark");
             g_string_append_printf(beginning, " %s %s", args[0], args[1]);
             found = autocomplete_param_with_ac(input, beginning->str, bookmark_property_ac, TRUE);
             g_string_free(beginning, TRUE);
@@ -1578,6 +1686,7 @@ _bookmark_autocomplete(ProfWin *window, const char *const input)
         }
         if ((num_args == 3 && space_at_end && (g_strcmp0(args[2], "autojoin") == 0))
                 || (num_args == 4 && (g_strcmp0(args[2], "autojoin") == 0) && !space_at_end))  {
+            GString *beginning = g_string_new("/bookmark");
             g_string_append_printf(beginning, " %s %s %s", args[0], args[1], args[2]);
             found = autocomplete_param_with_func(input, beginning->str, prefs_autocomplete_boolean_choice);
             g_string_free(beginning, TRUE);
@@ -1587,6 +1696,7 @@ _bookmark_autocomplete(ProfWin *window, const char *const input)
             }
         }
         if ((num_args == 4 && space_at_end) || (num_args == 5 && !space_at_end)) {
+            GString *beginning = g_string_new("/bookmark");
             g_string_append_printf(beginning, " %s %s %s %s", args[0], args[1], args[2], args[3]);
             found = autocomplete_param_with_ac(input, beginning->str, bookmark_property_ac, TRUE);
             g_string_free(beginning, TRUE);
@@ -1597,6 +1707,7 @@ _bookmark_autocomplete(ProfWin *window, const char *const input)
         }
         if ((num_args == 5 && space_at_end && (g_strcmp0(args[4], "autojoin") == 0))
                 || (num_args == 6 && (g_strcmp0(args[4], "autojoin") == 0) && !space_at_end))  {
+            GString *beginning = g_string_new("/bookmark");
             g_string_append_printf(beginning, " %s %s %s %s %s", args[0], args[1], args[2], args[3], args[4]);
             found = autocomplete_param_with_func(input, beginning->str, prefs_autocomplete_boolean_choice);
             g_string_free(beginning, TRUE);
@@ -1606,6 +1717,7 @@ _bookmark_autocomplete(ProfWin *window, const char *const input)
             }
         }
         if ((num_args == 6 && space_at_end) || (num_args == 7 && !space_at_end)) {
+            GString *beginning = g_string_new("/bookmark");
             g_string_append_printf(beginning, " %s %s %s %s %s %s", args[0], args[1], args[2], args[3], args[4], args[5]);
             found = autocomplete_param_with_ac(input, beginning->str, bookmark_property_ac, TRUE);
             g_string_free(beginning, TRUE);
@@ -1616,6 +1728,7 @@ _bookmark_autocomplete(ProfWin *window, const char *const input)
         }
         if ((num_args == 7 && space_at_end && (g_strcmp0(args[6], "autojoin") == 0))
                 || (num_args == 8 && (g_strcmp0(args[6], "autojoin") == 0) && !space_at_end))  {
+            GString *beginning = g_string_new("/bookmark");
             g_string_append_printf(beginning, " %s %s %s %s %s %s %s", args[0], args[1], args[2], args[3], args[4], args[5], args[6]);
             found = autocomplete_param_with_func(input, beginning->str, prefs_autocomplete_boolean_choice);
             g_string_free(beginning, TRUE);
@@ -1624,7 +1737,6 @@ _bookmark_autocomplete(ProfWin *window, const char *const input)
                 return found;
             }
         }
-        g_string_free(beginning, TRUE);
     }
 
     g_strfreev(args);
@@ -1896,7 +2008,7 @@ _plugins_autocomplete(ProfWin *window, const char *const input)
     char *result = NULL;
 
     if (strncmp(input, "/plugins install ", 17) == 0) {
-        return _complete_filepath(input, "/plugins install");
+        return cmd_ac_complete_filepath(input, "/plugins install");
     }
 
     if (strncmp(input, "/plugins load ", 14) == 0) {
@@ -2540,9 +2652,9 @@ _connect_autocomplete(ProfWin *window, const char *const input)
 
     if (result) {
         gboolean space_at_end = g_str_has_suffix(input, " ");
-        GString *beginning = g_string_new("/connect");
         int num_args = g_strv_length(args);
         if ((num_args == 1 && space_at_end) || (num_args == 2 && !space_at_end)) {
+            GString *beginning = g_string_new("/connect");
             g_string_append_printf(beginning, " %s", args[0]);
             found = autocomplete_param_with_ac(input, beginning->str, connect_property_ac, TRUE);
             g_string_free(beginning, TRUE);
@@ -2553,6 +2665,7 @@ _connect_autocomplete(ProfWin *window, const char *const input)
         }
         if ((num_args == 2 && space_at_end && (g_strcmp0(args[1], "tls") == 0))
                 || (num_args == 3 && (g_strcmp0(args[1], "tls") == 0) && !space_at_end))  {
+            GString *beginning = g_string_new("/connect");
             g_string_append_printf(beginning, " %s %s", args[0], args[1]);
             found = autocomplete_param_with_ac(input, beginning->str, tls_property_ac, TRUE);
             g_string_free(beginning, TRUE);
@@ -2562,6 +2675,7 @@ _connect_autocomplete(ProfWin *window, const char *const input)
             }
         }
         if ((num_args == 3 && space_at_end) || (num_args == 4 && !space_at_end)) {
+            GString *beginning = g_string_new("/connect");
             g_string_append_printf(beginning, " %s %s %s", args[0], args[1], args[2]);
             found = autocomplete_param_with_ac(input, beginning->str, connect_property_ac, TRUE);
             g_string_free(beginning, TRUE);
@@ -2572,6 +2686,7 @@ _connect_autocomplete(ProfWin *window, const char *const input)
         }
         if ((num_args == 4 && space_at_end && (g_strcmp0(args[3], "tls") == 0))
                 || (num_args == 5 && (g_strcmp0(args[3], "tls") == 0) && !space_at_end))  {
+            GString *beginning = g_string_new("/connect");
             g_string_append_printf(beginning, " %s %s %s %s", args[0], args[1], args[2], args[3]);
             found = autocomplete_param_with_ac(input, beginning->str, tls_property_ac, TRUE);
             g_string_free(beginning, TRUE);
@@ -2581,6 +2696,7 @@ _connect_autocomplete(ProfWin *window, const char *const input)
             }
         }
         if ((num_args == 5 && space_at_end) || (num_args == 6 && !space_at_end)) {
+            GString *beginning = g_string_new("/connect");
             g_string_append_printf(beginning, " %s %s %s %s %s", args[0], args[1], args[2], args[3], args[4]);
             found = autocomplete_param_with_ac(input, beginning->str, connect_property_ac, TRUE);
             g_string_free(beginning, TRUE);
@@ -2591,6 +2707,7 @@ _connect_autocomplete(ProfWin *window, const char *const input)
         }
         if ((num_args == 6 && space_at_end && (g_strcmp0(args[5], "tls") == 0))
                 || (num_args == 7 && (g_strcmp0(args[5], "tls") == 0) && !space_at_end))  {
+            GString *beginning = g_string_new("/connect");
             g_string_append_printf(beginning, " %s %s %s %s %s %s", args[0], args[1], args[2], args[3], args[4], args[5]);
             found = autocomplete_param_with_ac(input, beginning->str, tls_property_ac, TRUE);
             g_string_free(beginning, TRUE);
@@ -2599,8 +2716,6 @@ _connect_autocomplete(ProfWin *window, const char *const input)
                 return found;
             }
         }
-
-        g_string_free(beginning, TRUE);
     }
 
     g_strfreev(args);
@@ -2729,7 +2844,7 @@ _close_autocomplete(ProfWin *window, const char *const input)
 static char*
 _sendfile_autocomplete(ProfWin *window, const char *const input)
 {
-    return _complete_filepath(input, "/sendfile");
+    return cmd_ac_complete_filepath(input, "/sendfile");
 }
 
 static char*
@@ -2779,9 +2894,9 @@ _account_autocomplete(ProfWin *window, const char *const input)
     gchar **args = parse_args(input, 2, 4, &result);
     if (result && (strcmp(args[0], "set") == 0)) {
         gboolean space_at_end = g_str_has_suffix(input, " ");
-        GString *beginning = g_string_new("/account");
         int num_args = g_strv_length(args);
         if ((num_args == 2 && space_at_end) || (num_args == 3 && !space_at_end)) {
+            GString *beginning = g_string_new("/account");
             g_string_append_printf(beginning, " %s %s", args[0], args[1]);
             found = autocomplete_param_with_ac(input, beginning->str, account_set_ac, TRUE);
             g_string_free(beginning, TRUE);
@@ -2792,6 +2907,7 @@ _account_autocomplete(ProfWin *window, const char *const input)
         }
         if ((num_args == 3 && space_at_end && (g_strcmp0(args[2], "otr") == 0))
                 || (num_args == 4 && (g_strcmp0(args[2], "otr") == 0) && !space_at_end))  {
+            GString *beginning = g_string_new("/account");
             g_string_append_printf(beginning, " %s %s %s", args[0], args[1], args[2]);
             found = autocomplete_param_with_ac(input, beginning->str, otr_policy_ac, TRUE);
             g_string_free(beginning, TRUE);
@@ -2802,6 +2918,7 @@ _account_autocomplete(ProfWin *window, const char *const input)
         }
         if ((num_args == 3 && space_at_end && (g_strcmp0(args[2], "status") == 0))
                 || (num_args == 4 && (g_strcmp0(args[2], "status") == 0) && !space_at_end))  {
+            GString *beginning = g_string_new("/account");
             g_string_append_printf(beginning, " %s %s %s", args[0], args[1], args[2]);
             found = autocomplete_param_with_ac(input, beginning->str, account_status_ac, TRUE);
             g_string_free(beginning, TRUE);
@@ -2812,6 +2929,7 @@ _account_autocomplete(ProfWin *window, const char *const input)
         }
         if ((num_args == 3 && space_at_end && (g_strcmp0(args[2], "tls") == 0))
                 || (num_args == 4 && (g_strcmp0(args[2], "tls") == 0) && !space_at_end))  {
+            GString *beginning = g_string_new("/account");
             g_string_append_printf(beginning, " %s %s %s", args[0], args[1], args[2]);
             found = autocomplete_param_with_ac(input, beginning->str, tls_property_ac, TRUE);
             g_string_free(beginning, TRUE);
@@ -2822,6 +2940,7 @@ _account_autocomplete(ProfWin *window, const char *const input)
         }
         if ((num_args == 3 && space_at_end && (g_strcmp0(args[2], "startscript") == 0))
                 || (num_args == 4 && (g_strcmp0(args[2], "startscript") == 0) && !space_at_end))  {
+            GString *beginning = g_string_new("/account");
             g_string_append_printf(beginning, " %s %s %s", args[0], args[1], args[2]);
             found = autocomplete_param_with_func(input, beginning->str, _script_autocomplete_func);
             g_string_free(beginning, TRUE);
@@ -2832,6 +2951,7 @@ _account_autocomplete(ProfWin *window, const char *const input)
         }
         if ((num_args == 3 && space_at_end && (g_strcmp0(args[2], "theme") == 0))
                 || (num_args == 4 && (g_strcmp0(args[2], "theme") == 0) && !space_at_end))  {
+            GString *beginning = g_string_new("/account");
             g_string_append_printf(beginning, " %s %s %s", args[0], args[1], args[2]);
             if (theme_load_ac == NULL) {
                 theme_load_ac = autocomplete_new();
@@ -2854,6 +2974,7 @@ _account_autocomplete(ProfWin *window, const char *const input)
 #ifdef HAVE_LIBGPGME
         if ((num_args == 3 && space_at_end && (g_strcmp0(args[2], "pgpkeyid") == 0))
                 || (num_args == 4 && (g_strcmp0(args[2], "pgpkeyid") == 0) && !space_at_end))  {
+            GString *beginning = g_string_new("/account");
             g_string_append_printf(beginning, " %s %s %s", args[0], args[1], args[2]);
             found = autocomplete_param_with_func(input, beginning->str, p_gpg_autocomplete_key);
             g_string_free(beginning, TRUE);
@@ -2932,109 +3053,3 @@ _presence_autocomplete(ProfWin *window, const char *const input)
     return NULL;
 }
 
-static char*
-_complete_filepath(const char *const input, char *const startstr)
-{
-    static char* last_directory = NULL;
-
-    unsigned int output_off = 0;
-
-    char *result = NULL;
-    char *tmp;
-
-    // strip command
-    char *inpcp = (char*)input + strlen(startstr);
-    while (*inpcp == ' ') {
-        inpcp++;
-    }
-
-    inpcp = strdup(inpcp);
-
-    // strip quotes
-    if (*inpcp == '"') {
-        tmp = strchr(inpcp+1, '"');
-        if (tmp) {
-            *tmp = '\0';
-        }
-        tmp = strdup(inpcp+1);
-        free(inpcp);
-        inpcp = tmp;
-    }
-
-    // expand ~ to $HOME
-    if (inpcp[0] == '~' && inpcp[1] == '/') {
-        if (asprintf(&tmp, "%s/%sfoo", getenv("HOME"), inpcp+2) == -1) {
-            return NULL;
-        }
-        output_off = strlen(getenv("HOME"))+1;
-    } else {
-        if (asprintf(&tmp, "%sfoo", inpcp) == -1) {
-            return NULL;
-        }
-    }
-    free(inpcp);
-    inpcp = tmp;
-
-    char* inpcp2 = strdup(inpcp);
-    char* foofile = strdup(basename(inpcp2));
-    char* directory = strdup(dirname(inpcp));
-    free(inpcp);
-    free(inpcp2);
-
-    if (!last_directory || strcmp(last_directory, directory) != 0) {
-        free(last_directory);
-        last_directory = directory;
-        autocomplete_reset(filepath_ac);
-
-        struct dirent *dir;
-
-        DIR *d = opendir(directory);
-        if (d) {
-            while ((dir = readdir(d)) != NULL) {
-                if (strcmp(dir->d_name, ".") == 0) {
-                    continue;
-                } else if (strcmp(dir->d_name, "..") == 0) {
-                    continue;
-                } else if (*(dir->d_name) == '.' && *foofile != '.') {
-                    // only show hidden files on explicit request
-                    continue;
-                }
-                char * acstring;
-                if (output_off) {
-                    if (asprintf(&tmp, "%s/%s", directory, dir->d_name) == -1) {
-                        free(foofile);
-                        return NULL;
-                    }
-                    if (asprintf(&acstring, "~/%s", tmp+output_off) == -1) {
-                        free(foofile);
-                        return NULL;
-                    }
-                    free(tmp);
-                } else if (strcmp(directory, "/") == 0) {
-                    if (asprintf(&acstring, "/%s", dir->d_name) == -1) {
-                        free(foofile);
-                        return NULL;
-                    }
-                } else {
-                    if (asprintf(&acstring, "%s/%s", directory, dir->d_name) == -1) {
-                        free(foofile);
-                        return NULL;
-                    }
-                }
-                autocomplete_add(filepath_ac, acstring);
-                free(acstring);
-            }
-            closedir(d);
-        }
-    } else {
-        free(directory);
-    }
-    free(foofile);
-
-    result = autocomplete_param_with_ac(input, startstr, filepath_ac, TRUE);
-    if (result) {
-        return result;
-    }
-
-    return NULL;
-}

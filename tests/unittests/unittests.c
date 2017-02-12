@@ -6,6 +6,7 @@
 #include <setjmp.h>
 #include <cmocka.h>
 #include <sys/stat.h>
+#include <locale.h>
 
 #include "config.h"
 #include "xmpp/chat_session.h"
@@ -37,6 +38,7 @@
 #include "test_plugins_disco.h"
 
 int main(int argc, char* argv[]) {
+    setlocale(LC_ALL, "");
     const UnitTest all_tests[] = {
 
         unit_test(replace_one_substr),
@@ -429,7 +431,9 @@ int main(int argc, char* argv[]) {
         unit_test_setup_teardown(console_shows_dnd_presence_when_set_all,
             load_preferences,
             close_preferences),
-        unit_test(handle_offline_removes_chat_session),
+        unit_test_setup_teardown(handle_offline_removes_chat_session,
+            load_preferences,
+            close_preferences),
         unit_test(lost_connection_clears_chat_sessions),
 
         unit_test(cmd_alias_add_shows_usage_when_no_args),

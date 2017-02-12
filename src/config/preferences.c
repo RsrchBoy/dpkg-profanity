@@ -1,7 +1,7 @@
 /*
  * preferences.c
  *
- * Copyright (C) 2012 - 2016 James Booth <boothj5@gmail.com>
+ * Copyright (C) 2012 - 2017 James Booth <boothj5@gmail.com>
  *
  * This file is part of Profanity.
  *
@@ -446,6 +446,45 @@ prefs_set_string(preference_t pref, char *value)
         g_key_file_set_string(prefs, group, key, value);
     }
     _save_prefs();
+}
+
+char*
+prefs_get_tls_certpath(void)
+{
+    const char *group = _get_group(PREF_TLS_CERTPATH);
+    const char *key = _get_key(PREF_TLS_CERTPATH);
+
+    char *setting = g_key_file_get_string(prefs, group, key, NULL);
+
+    if (g_strcmp0(setting, "none") == 0) {
+        prefs_free_string(setting);
+        return NULL;
+    }
+
+    if (setting == NULL) {
+        if (g_file_test("/etc/ssl/certs",  G_FILE_TEST_IS_DIR)) {
+            return strdup("/etc/ssl/certs");
+        }
+        if (g_file_test("/etc/pki/tls/certs",  G_FILE_TEST_IS_DIR)) {
+            return strdup("/etc/pki/tls/certs");
+        }
+        if (g_file_test("/etc/ssl",  G_FILE_TEST_IS_DIR)) {
+            return strdup("/etc/ssl");
+        }
+        if (g_file_test("/etc/pki/tls",  G_FILE_TEST_IS_DIR)) {
+            return strdup("/etc/pki/tls");
+        }
+        if (g_file_test("/system/etc/security/cacerts",  G_FILE_TEST_IS_DIR)) {
+            return strdup("/system/etc/security/cacerts");
+        }
+
+        return NULL;
+    }
+
+    char *result = strdup(setting);
+    prefs_free_string(setting);
+
+    return result;
 }
 
 gint

@@ -1,7 +1,7 @@
 /*
  * plugins.c
  *
- * Copyright (C) 2012 - 2016 James Booth <boothj5@gmail.com>
+ * Copyright (C) 2012 - 2017 James Booth <boothj5@gmail.com>
  *
  * This file is part of Profanity.
  *
@@ -214,8 +214,7 @@ plugins_unload(const char *const name)
         if (connection_get_status() == JABBER_CONNECTED) {
             char* account_name = session_get_account_name();
             resource_presence_t last_presence = accounts_get_last_presence(account_name);
-            char *msg = connection_get_presence_msg();
-            cl_ev_presence_send(last_presence, msg, 0);
+            cl_ev_presence_send(last_presence, 0);
         }
     }
     return TRUE;
@@ -414,11 +413,18 @@ plugins_pre_chat_message_send(const char * const barejid, const char *message)
     GList *curr = values;
     while (curr) {
         ProfPlugin *plugin = curr->data;
-        new_message = plugin->pre_chat_message_send(plugin, barejid, curr_message);
-        if (new_message) {
-            free(curr_message);
-            curr_message = strdup(new_message);
-            free(new_message);
+        if (plugin->contains_hook(plugin, "prof_pre_chat_message_send")) {
+            new_message = plugin->pre_chat_message_send(plugin, barejid, curr_message);
+            if (new_message) {
+                free(curr_message);
+                curr_message = strdup(new_message);
+                free(new_message);
+            } else {
+                free(curr_message);
+                g_list_free(values);
+
+                return NULL;
+            }
         }
         curr = g_list_next(curr);
     }
@@ -486,11 +492,18 @@ plugins_pre_room_message_send(const char * const barejid, const char *message)
     GList *curr = values;
     while (curr) {
         ProfPlugin *plugin = curr->data;
-        new_message = plugin->pre_room_message_send(plugin, barejid, curr_message);
-        if (new_message) {
-            free(curr_message);
-            curr_message = strdup(new_message);
-            free(new_message);
+        if (plugin->contains_hook(plugin, "prof_pre_room_message_send")) {
+            new_message = plugin->pre_room_message_send(plugin, barejid, curr_message);
+            if (new_message) {
+                free(curr_message);
+                curr_message = strdup(new_message);
+                free(new_message);
+            } else {
+                free(curr_message);
+                g_list_free(values);
+
+                return NULL;
+            }
         }
         curr = g_list_next(curr);
     }
@@ -588,11 +601,19 @@ plugins_pre_priv_message_send(const char * const fulljid, const char * const mes
     GList *curr = values;
     while (curr) {
         ProfPlugin *plugin = curr->data;
-        new_message = plugin->pre_priv_message_send(plugin, jidp->barejid, jidp->resourcepart, curr_message);
-        if (new_message) {
-            free(curr_message);
-            curr_message = strdup(new_message);
-            free(new_message);
+        if (plugin->contains_hook(plugin, "prof_pre_priv_message_send")) {
+            new_message = plugin->pre_priv_message_send(plugin, jidp->barejid, jidp->resourcepart, curr_message);
+            if (new_message) {
+                free(curr_message);
+                curr_message = strdup(new_message);
+                free(new_message);
+            } else {
+                free(curr_message);
+                g_list_free(values);
+                jid_destroy(jidp);
+
+                return NULL;
+            }
         }
         curr = g_list_next(curr);
     }
@@ -839,4 +860,6 @@ plugins_shutdown(void)
     plugin_settings_close();
     callbacks_close();
     disco_close();
+    g_hash_table_destroy(plugins);
+    plugins = NULL;
 }
