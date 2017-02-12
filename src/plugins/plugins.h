@@ -1,7 +1,7 @@
 /*
  * plugins.h
  *
- * Copyright (C) 2012 - 2016 James Booth <boothj5@gmail.com>
+ * Copyright (C) 2012 - 2017 James Booth <boothj5@gmail.com>
  *
  * This file is part of Profanity.
  *
@@ -48,6 +48,8 @@ typedef struct prof_plugin_t {
     void *module;
     void (*init_func)(struct prof_plugin_t* plugin, const char * const version,
         const char * const status, const char *const account_name, const char *const fulljid);
+
+    gboolean (*contains_hook)(struct prof_plugin_t* plugin, const char *const hook);
 
     void (*on_start_func)(struct prof_plugin_t* plugin);
     void (*on_shutdown_func)(struct prof_plugin_t* plugin);

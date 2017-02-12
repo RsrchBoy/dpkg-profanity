@@ -1,7 +1,7 @@
 /*
  * chatwin.c
  *
- * Copyright (C) 2012 - 2016 James Booth <boothj5@gmail.com>
+ * Copyright (C) 2012 - 2017 James Booth <boothj5@gmail.com>
  *
  * This file is part of Profanity.
  *
@@ -299,7 +299,9 @@ chatwin_outgoing_msg(ProfChatWin *chatwin, const char *const message, char *id, 
     assert(chatwin != NULL);
 
     char enc_char = '-';
-    if (enc_mode == PROF_MSG_OTR) {
+    if (chatwin->outgoing_char) {
+        enc_char = chatwin->outgoing_char[0];
+    } else if (enc_mode == PROF_MSG_OTR) {
         enc_char = prefs_get_otr_char();
     } else if (enc_mode == PROF_MSG_PGP) {
         enc_char = prefs_get_pgp_char();
@@ -383,6 +385,60 @@ chatwin_get_string(ProfChatWin *chatwin)
     g_string_free(res, FALSE);
 
     return resstr;
+}
+
+void
+chatwin_set_enctext(ProfChatWin *chatwin, const char *const enctext)
+{
+    if (chatwin->enctext) {
+        free(chatwin->enctext);
+    }
+    chatwin->enctext = strdup(enctext);
+}
+
+void
+chatwin_unset_enctext(ProfChatWin *chatwin)
+{
+    if (chatwin->enctext) {
+        free(chatwin->enctext);
+        chatwin->enctext = NULL;
+    }
+}
+
+void
+chatwin_set_incoming_char(ProfChatWin *chatwin, const char *const ch)
+{
+    if (chatwin->incoming_char) {
+        free(chatwin->incoming_char);
+    }
+    chatwin->incoming_char = strdup(ch);
+}
+
+void
+chatwin_unset_incoming_char(ProfChatWin *chatwin)
+{
+    if (chatwin->incoming_char) {
+        free(chatwin->incoming_char);
+        chatwin->incoming_char = NULL;
+    }
+}
+
+void
+chatwin_set_outgoing_char(ProfChatWin *chatwin, const char *const ch)
+{
+    if (chatwin->outgoing_char) {
+        free(chatwin->outgoing_char);
+    }
+    chatwin->outgoing_char = strdup(ch);
+}
+
+void
+chatwin_unset_outgoing_char(ProfChatWin *chatwin)
+{
+    if (chatwin->outgoing_char) {
+        free(chatwin->outgoing_char);
+        chatwin->outgoing_char = NULL;
+    }
 }
 
 static void
