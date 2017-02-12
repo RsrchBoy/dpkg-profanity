@@ -1,3 +1,9 @@
+profanity (0.5.1-0~15.10~ppa1) wily; urgency=medium
+
+  * Build for wily.
+
+ -- Chris Weyl <cweyl@alumni.drew.edu>  Sat, 11 Feb 2017 23:15:17 -0600
+
 profanity (0.5.1-0) UNRELEASED; urgency=medium
 
   * Imported Upstream version 0.5.1
