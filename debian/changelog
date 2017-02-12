@@ -1,3 +1,9 @@
+profanity (0.5.1-0) UNRELEASED; urgency=medium
+
+  * Imported Upstream version 0.5.1
+
+ -- Chris Weyl <cweyl@alumni.drew.edu>  Sat, 11 Feb 2017 23:00:38 -0600
+
 profanity (0.5.0-0) UNRELEASED; urgency=medium
 
   * Update to 0.5.0.
