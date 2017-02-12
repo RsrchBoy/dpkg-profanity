@@ -1,7 +1,7 @@
 /*
  * otrlibv4.c
  *
- * Copyright (C) 2012 - 2016 James Booth <boothj5@gmail.com>
+ * Copyright (C) 2012 - 2017 James Booth <boothj5@gmail.com>
  *
  * This file is part of Profanity.
  *
@@ -120,7 +120,7 @@ cb_handle_msg_event(void *opdata, OtrlMessageEvent msg_event,
             ui_handle_otr_error(context->username, "OTR: Policy requires encryption, but attempting to send an unencrypted message.");
             break;
         case OTRL_MSGEVENT_ENCRYPTION_ERROR:
-             ui_handle_otr_error(context->username, "OTR: Error occured while encrypting a message, message not sent.");
+             ui_handle_otr_error(context->username, "OTR: Error occurred while encrypting a message, message not sent.");
             break;
         case OTRL_MSGEVENT_CONNECTION_ENDED:
             ui_handle_otr_error(context->username, "OTR: Message not sent because contact has ended the private conversation.");

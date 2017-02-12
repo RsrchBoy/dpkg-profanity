@@ -1,7 +1,7 @@
 /*
  * cmd_funcs.c
  *
- * Copyright (C) 2012 - 2016 James Booth <boothj5@gmail.com>
+ * Copyright (C) 2012 - 2017 James Booth <boothj5@gmail.com>
  *
  * This file is part of Profanity.
  *
@@ -171,14 +171,18 @@ cmd_tls_certpath(ProfWin *window, const char *const command, gchar **args)
         }
         return TRUE;
     } else if (g_strcmp0(args[1], "clear") == 0) {
-        prefs_set_string(PREF_TLS_CERTPATH, NULL);
+        prefs_set_string(PREF_TLS_CERTPATH, "none");
         cons_show("Certificate path cleared");
         return TRUE;
+    } else if (g_strcmp0(args[1], "default") == 0) {
+        prefs_set_string(PREF_TLS_CERTPATH, NULL);
+        cons_show("Certificate path defaulted to finding system certpath.");
+        return TRUE;
     } else if (args[1] == NULL) {
-        char *path = prefs_get_string(PREF_TLS_CERTPATH);
+        char *path = prefs_get_tls_certpath();
         if (path) {
             cons_show("Trusted certificate path: %s", path);
-            prefs_free_string(path);
+            free(path);
         } else {
             cons_show("No trusted certificate path set.");
         }
@@ -265,7 +269,7 @@ cmd_tls_revoke(ProfWin *window, const char *const command, gchar **args)
         if (res) {
             cons_show("Trusted certificate revoked: %s", args[1]);
         } else {
-            cons_show("Could not find certificate: %s", args[0]);
+            cons_show("Could not find certificate: %s", args[1]);
         }
     }
     return TRUE;
@@ -412,7 +416,7 @@ cmd_connect(ProfWin *window, const char *const command, gchar **args)
             account->password = NULL;
         }
 
-        jid = account_create_full_jid(account);
+        jid = account_create_connect_jid(account);
         account_free(account);
 
     // connect with JID
@@ -856,8 +860,7 @@ _account_set_presence_priority(char *account_name, char *presence, char *priorit
         char *connected_account = session_get_account_name();
         resource_presence_t last_presence = accounts_get_last_presence(connected_account);
         if (presence_type == last_presence) {
-            char *message = connection_get_presence_msg();
-            cl_ev_presence_send(last_presence, message, 0);
+            cl_ev_presence_send(last_presence, 0);
         }
     }
     cons_show("Updated %s priority for account %s: %s", presence, account_name, priority);
@@ -954,6 +957,14 @@ cmd_account_clear(ProfWin *window, const char *const command, gchar **args)
     } else if (strcmp(property, "theme") == 0) {
         accounts_clear_theme(account_name);
         cons_show("Removed theme for account %s", account_name);
+        cons_show("");
+    } else if (strcmp(property, "muc") == 0) {
+        accounts_clear_muc(account_name);
+        cons_show("Removed MUC service for account %s", account_name);
+        cons_show("");
+    } else if (strcmp(property, "resource") == 0) {
+        accounts_clear_resource(account_name);
+        cons_show("Removed resource for account %s", account_name);
         cons_show("");
     } else {
         cons_show("Invalid property: %s", property);
@@ -1479,9 +1490,9 @@ _cmd_help_cmd_list(const char *const tag)
     cons_show("");
     ProfWin *console = wins_get_console();
     if (tag) {
-        win_vprint(console, '-', 0, NULL, 0, THEME_WHITE_BOLD, "", "%s commands", tag);
+        win_vprint(console, '-', 0, NULL, 0, THEME_HELP_HEADER, "", "%s commands", tag);
     } else {
-        win_print(console, '-', 0, NULL, 0, THEME_WHITE_BOLD, "", "All commands");
+        win_print(console, '-', 0, NULL, 0, THEME_HELP_HEADER, "", "All commands");
     }
 
     GList *ordered_commands = NULL;
@@ -3422,17 +3433,20 @@ cmd_join(ProfWin *window, const char *const command, gchar **args)
     if (args[0] == NULL) {
         char *account_name = session_get_account_name();
         ProfAccount *account = accounts_get_account(account_name);
+        if (account->muc_service) {
+            GString *room_str = g_string_new("");
+            char *uuid = connection_create_uuid();
+            g_string_append_printf(room_str, "private-chat-%s@%s", uuid, account->muc_service);
+            connection_free_uuid(uuid);
 
-        GString *room_str = g_string_new("");
-        char *uuid = connection_create_uuid();
-        g_string_append_printf(room_str, "private-chat-%s@%s", uuid, account->muc_service);
-        connection_free_uuid(uuid);
+            presence_join_room(room_str->str, account->muc_nick, NULL);
+            muc_join(room_str->str, account->muc_nick, NULL, FALSE);
 
-        presence_join_room(room_str->str, account->muc_nick, NULL);
-        muc_join(room_str->str, account->muc_nick, NULL, FALSE);
-
-        g_string_free(room_str, TRUE);
-        account_free(account);
+            g_string_free(room_str, TRUE);
+            account_free(account);
+        } else {
+            cons_show("Account MUC service property not found.");
+        }
 
         return TRUE;
     }
@@ -3447,7 +3461,6 @@ cmd_join(ProfWin *window, const char *const command, gchar **args)
     char *room = NULL;
     char *nick = NULL;
     char *passwd = NULL;
-    GString *room_str = g_string_new("");
     char *account_name = session_get_account_name();
     ProfAccount *account = accounts_get_account(account_name);
 
@@ -3456,11 +3469,18 @@ cmd_join(ProfWin *window, const char *const command, gchar **args)
         room = args[0];
 
     // server not supplied (room), use account preference
-    } else {
+    } else if (account->muc_service) {
+        GString *room_str = g_string_new("");
         g_string_append(room_str, args[0]);
         g_string_append(room_str, "@");
         g_string_append(room_str, account->muc_service);
         room = room_str->str;
+        g_string_free(room_str, FALSE);
+
+    // no account preference
+    } else {
+        cons_show("Account MUC service property not found.");
+        return TRUE;
     }
 
     // Additional args supplied
@@ -3498,7 +3518,6 @@ cmd_join(ProfWin *window, const char *const command, gchar **args)
     }
 
     jid_destroy(room_arg);
-    g_string_free(room_str, TRUE);
     account_free(account);
 
     return TRUE;
@@ -4304,13 +4323,18 @@ cmd_rooms(ProfWin *window, const char *const command, gchar **args)
         return TRUE;
     }
 
-    if (args[0] == NULL) {
-        ProfAccount *account = accounts_get_account(session_get_account_name());
-        iq_room_list_request(account->muc_service);
-        account_free(account);
-    } else {
+    if (args[0]) {
         iq_room_list_request(args[0]);
+        return TRUE;
     }
+
+    ProfAccount *account = accounts_get_account(session_get_account_name());
+    if (account->muc_service) {
+        iq_room_list_request(account->muc_service);
+    } else {
+        cons_show("Account MUC service property not found.");
+    }
+    account_free(account);
 
     return TRUE;
 }
@@ -5793,7 +5817,7 @@ cmd_priority(ProfWin *window, const char *const command, gchar **args)
     if (res) {
         accounts_set_priority_all(session_get_account_name(), intval);
         resource_presence_t last_presence = accounts_get_last_presence(session_get_account_name());
-        cl_ev_presence_send(last_presence, connection_get_presence_msg(), 0);
+        cl_ev_presence_send(last_presence, 0);
         cons_show("Priority set to %d.", intval);
     } else {
         cons_show(err_msg);
@@ -6363,7 +6387,7 @@ cmd_pgp(ProfWin *window, const char *const command, gchar **args)
         }
 
         chatwin->pgp_send = TRUE;
-        ui_current_print_formatted_line('!', 0, "PGP encyption enabled.");
+        ui_current_print_formatted_line('!', 0, "PGP encryption enabled.");
         return TRUE;
     }
 
@@ -6386,7 +6410,7 @@ cmd_pgp(ProfWin *window, const char *const command, gchar **args)
         }
 
         chatwin->pgp_send = FALSE;
-        ui_current_print_formatted_line('!', 0, "PGP encyption disabled.");
+        ui_current_print_formatted_line('!', 0, "PGP encryption disabled.");
         return TRUE;
     }
 
@@ -7030,7 +7054,8 @@ _update_presence(const resource_presence_t resource_presence,
     if (conn_status != JABBER_CONNECTED) {
         cons_show("You are not currently connected.");
     } else {
-        cl_ev_presence_send(resource_presence, msg, 0);
+        connection_set_presence_msg(msg);
+        cl_ev_presence_send(resource_presence, 0);
         ui_update_presence(resource_presence, msg, show);
     }
 }

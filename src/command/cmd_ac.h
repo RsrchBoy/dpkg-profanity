@@ -1,7 +1,7 @@
 /*
  * cmd_ac.h
  *
- * Copyright (C) 2012 - 2016 James Booth <boothj5@gmail.com>
+ * Copyright (C) 2012 - 2017 James Booth <boothj5@gmail.com>
  *
  * This file is part of Profanity.
  *
@@ -57,7 +57,8 @@ void cmd_ac_add_form_fields(DataForm *form);
 void cmd_ac_remove_form_fields(DataForm *form);
 
 char* cmd_ac_complete(ProfWin *window, const char *const input);
-
 void cmd_ac_reset(ProfWin *window);
+
+char* cmd_ac_complete_filepath(const char *const input, char *const startstr);
 
 #endif

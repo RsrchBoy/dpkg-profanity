@@ -1,7 +1,7 @@
 /*
  * python_plugins.h
  *
- * Copyright (C) 2012 - 2016 James Booth <boothj5@gmail.com>
+ * Copyright (C) 2012 - 2017 James Booth <boothj5@gmail.com>
  *
  * This file is part of Profanity.
  *
@@ -47,6 +47,9 @@ const char* python_get_version(void);
 
 void python_init_hook(ProfPlugin *plugin, const char *const version, const char *const status,
     const char *const account_name, const char *const fulljid);
+
+gboolean python_contains_hook(ProfPlugin *plugin, const char *const hook);
+
 void python_on_start_hook(ProfPlugin *plugin);
 void python_on_shutdown_hook(ProfPlugin *plugin);
 void python_on_unload_hook(ProfPlugin *plugin);
