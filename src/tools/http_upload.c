@@ -1,7 +1,7 @@
 /*
  * http_upload.c
  *
- * Copyright (C) 2012 - 2016 James Booth <boothj5@gmail.com>
+ * Copyright (C) 2012 - 2017 James Booth <boothj5@gmail.com>
  *
  * This file is part of Profanity.
  *
@@ -33,6 +33,8 @@
  */
 
 #define _GNU_SOURCE 1
+
+#include "config.h"
 
 #include <stdlib.h>
 #include <stdio.h>

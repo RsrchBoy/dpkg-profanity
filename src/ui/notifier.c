@@ -1,7 +1,7 @@
 /*
  * notifier.c
  *
- * Copyright (C) 2012 - 2016 James Booth <boothj5@gmail.com>
+ * Copyright (C) 2012 - 2017 James Booth <boothj5@gmail.com>
  *
  * This file is part of Profanity.
  *
@@ -140,7 +140,7 @@ notify_subscription(const char *const from)
 {
     GString *message = g_string_new("Subscription request: \n");
     g_string_append(message, from);
-    notify(message->str, 10000, "Incomming message");
+    notify(message->str, 10000, "Incoming message");
     g_string_free(message, TRUE);
 }
 

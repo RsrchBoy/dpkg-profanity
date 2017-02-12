@@ -1,7 +1,7 @@
 /*
  * core.c
  *
- * Copyright (C) 2012 - 2016 James Booth <boothj5@gmail.com>
+ * Copyright (C) 2012 - 2017 James Booth <boothj5@gmail.com>
  *
  * This file is part of Profanity.
  *
@@ -298,8 +298,12 @@ ui_contact_typing(const char *const barejid, const char *const resource)
         if ( !is_current || (is_current && prefs_get_boolean(PREF_NOTIFY_TYPING_CURRENT)) ) {
             PContact contact = roster_get_contact(barejid);
             char const *display_usr = NULL;
-            if (p_contact_name(contact)) {
-                display_usr = p_contact_name(contact);
+            if (contact) {
+                if (p_contact_name(contact)) {
+                    display_usr = p_contact_name(contact);
+                } else {
+                    display_usr = barejid;
+                }
             } else {
                 display_usr = barejid;
             }
@@ -383,11 +387,7 @@ ui_handle_login_account_success(ProfAccount *account, gboolean secured)
     title_bar_set_connected(TRUE);
     title_bar_set_tls(secured);
 
-    GString *fulljid = g_string_new(account->jid);
-    g_string_append(fulljid, "/");
-    g_string_append(fulljid, account->resource);
-    status_bar_print_message(fulljid->str);
-    g_string_free(fulljid, TRUE);
+    status_bar_print_message(connection_get_fulljid());
     status_bar_update_virtual();
 }
 

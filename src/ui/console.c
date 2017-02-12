@@ -1,7 +1,7 @@
 /*
  * console.c
  *
- * Copyright (C) 2012 - 2016 James Booth <boothj5@gmail.com>
+ * Copyright (C) 2012 - 2017 James Booth <boothj5@gmail.com>
  *
  * This file is part of Profanity.
  *
@@ -124,21 +124,22 @@ cons_show_help(const char *const cmd, CommandHelp *help)
     ProfWin *console = wins_get_console();
 
     cons_show("");
-    win_vprint(console, '-', 0, NULL, 0, THEME_WHITE_BOLD, "", "%s", &cmd[1]);
-    win_print(console, '-', 0, NULL, NO_EOL, THEME_WHITE_BOLD, "", "");
+    win_vprint(console, '-', 0, NULL, 0, THEME_HELP_HEADER, "", "%s", &cmd[1]);
+    win_print(console, '-', 0, NULL, NO_EOL, THEME_HELP_HEADER, "", "");
     int i;
     for (i = 0; i < strlen(cmd) - 1 ; i++) {
-        win_print(console, '-', 0, NULL, NO_EOL | NO_DATE, THEME_WHITE_BOLD, "", "-");
+        win_print(console, '-', 0, NULL, NO_EOL | NO_DATE, THEME_HELP_HEADER, "", "-");
     }
-    win_print(console, '-', 0, NULL, NO_DATE, THEME_WHITE_BOLD, "", "");
+    win_print(console, '-', 0, NULL, NO_DATE, THEME_HELP_HEADER, "", "");
     cons_show("");
 
-    win_print(console, '-', 0, NULL, 0, THEME_WHITE_BOLD, "", "Synopsis");
+    win_print(console, '-', 0, NULL, 0, THEME_HELP_HEADER, "", "Synopsis");
     ui_show_lines(console, help->synopsis);
     cons_show("");
 
-    win_print(console, '-', 0, NULL, 0, THEME_WHITE_BOLD, "", "Description");
+    win_print(console, '-', 0, NULL, 0, THEME_HELP_HEADER, "", "Description");
     win_println(console, 0, help->desc);
+
 
     int maxlen = 0;
     for (i = 0; help->args[i][0] != NULL; i++) {
@@ -148,7 +149,7 @@ cons_show_help(const char *const cmd, CommandHelp *help)
 
     if (i > 0) {
         cons_show("");
-        win_print(console, '-', 0, NULL, 0, THEME_WHITE_BOLD, "", "Arguments");
+        win_print(console, '-', 0, NULL, 0, THEME_HELP_HEADER, "", "Arguments");
         for (i = 0; help->args[i][0] != NULL; i++) {
             win_vprint(console, '-', maxlen + 3, NULL, 0, 0, "", "%-*s: %s", maxlen + 1, help->args[i][0], help->args[i][1]);
         }
@@ -156,7 +157,7 @@ cons_show_help(const char *const cmd, CommandHelp *help)
 
     if (g_strv_length((gchar**)help->examples) > 0) {
         cons_show("");
-        win_print(console, '-', 0, NULL, 0, THEME_WHITE_BOLD, "", "Examples");
+        win_print(console, '-', 0, NULL, 0, THEME_HELP_HEADER, "", "Examples");
         ui_show_lines(console, help->examples);
     }
 }
@@ -426,7 +427,7 @@ cons_about(void)
         }
     }
 
-    win_vprint(console, '-', 0, NULL, 0, 0, "", "Copyright (C) 2012 - 2016 James Booth <%s>.", PACKAGE_BUGREPORT);
+    win_vprint(console, '-', 0, NULL, 0, 0, "", "Copyright (C) 2012 - 2017 James Booth <%s>.", PACKAGE_BUGREPORT);
     win_println(console, 0, "License GPLv3+: GNU GPL version 3 or later <https://www.gnu.org/licenses/gpl.html>");
     win_println(console, 0, "");
     win_println(console, 0, "This is free software; you are free to change and redistribute it.");
@@ -475,7 +476,8 @@ void
 cons_show_login_success(ProfAccount *account, gboolean secured)
 {
     ProfWin *console = wins_get_console();
-    win_vprint(console, '-', 0, NULL, NO_EOL, 0, "", "%s logged in successfully, ", account->jid);
+    const char *fulljid = connection_get_fulljid();
+    win_vprint(console, '-', 0, NULL, NO_EOL, 0, "", "%s logged in successfully, ", fulljid);
 
     resource_presence_t presence = accounts_get_login_presence(account->name);
     const char *presence_str = string_from_resource_presence(presence);
@@ -2066,7 +2068,7 @@ cons_navigation_help(void)
 {
     ProfWin *console = wins_get_console();
     cons_show("");
-    win_print(console, '-', 0, NULL, 0, THEME_WHITE_BOLD, "", "Navigation");
+    win_print(console, '-', 0, NULL, 0, THEME_HELP_HEADER, "", "Navigation");
     cons_show("Alt-1..Alt-0, F1..F10    : Choose window.");
     cons_show("Alt-LEFT, Alt-RIGHT      : Previous/next chat window.");
     cons_show("PAGEUP, PAGEDOWN         : Page the main window.");
